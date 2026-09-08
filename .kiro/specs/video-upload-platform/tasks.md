@@ -203,7 +203,7 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
   - Add one short MP4 `Sample_Video` under `/samples`; run backend + worker locally against the temp storage to confirm upload → PENDING → PROCESSING → COMPLETED with renditions and thumbnail
   - _Requirements: 6.6_
 
-- [ ] 10. Checkpoint - processing pipeline runnable end to end
+- [x] 10. Checkpoint - processing pipeline runnable end to end
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. Implement the frontend (React SPA)
