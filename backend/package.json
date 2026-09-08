@@ -16,6 +16,7 @@
     "@nestjs/core": "^10.3.0",
     "@nestjs/graphql": "^12.1.1",
     "@nestjs/platform-express": "^10.3.0",
+    "@nestjs/terminus": "^10.3.0",
     "@video-platform/shared": "0.1.0",
     "graphql": "^16.8.1",
     "graphql-upload-minimal": "^1.6.1",

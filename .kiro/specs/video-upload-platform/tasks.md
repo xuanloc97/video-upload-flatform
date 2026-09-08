@@ -122,68 +122,68 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Confirm the existence/shape of `uploadVideo`, `videos`, `videoStatus`, `videoMetadata`; test range requests for playback
     - _Requirements: 2.1, 3.1_
 
-- [ ] 6. Implement backend health checks and processing callbacks
-  - [ ] 6.1 Implement `@nestjs/terminus` liveness/readiness with `/uploads` reachability
+- [x] 6. Implement backend health checks and processing callbacks
+  - [x] 6.1 Implement `@nestjs/terminus` liveness/readiness with `/uploads` reachability
     - Expose `/health/live` and `/health/ready`; readiness includes a writable-check on `/uploads` and reports unhealthy when unreachable; ensure probes respond well under 5 seconds
     - _Requirements: 5.1, 5.2, 5.3_
 
-  - [ ] 6.2 Implement `updateProcessingResult`, `retryProcessing`, and `claimNext` operations
+  - [x] 6.2 Implement `updateProcessingResult`, `retryProcessing`, and `claimNext` operations
     - Add the internal `updateProcessingResult` mutation (backend owns all writes), the atomic `claimNext` claim (`UPDATE ... WHERE status='PENDING'` → `PROCESSING`), and `retryProcessing` (FAILED → PENDING); add stuck-job recovery that resets `PROCESSING` records past a timeout back to `PENDING`
     - _Requirements: 6.1, 7.1, 7.2_
 
-  - [ ]* 6.3 Write property test for unhealthy-when-storage-unreachable
+  - [x]* 6.3 Write property test for unhealthy-when-storage-unreachable
     - **Property 11: Unhealthy when storage is unreachable**
     - **Validates: Requirements 5.2**
 
-  - [ ]* 6.4 Write property test for atomic exclusive job claim
+  - [x]* 6.4 Write property test for atomic exclusive job claim
     - **Property 12: Claiming a job is atomic and exclusive**
     - **Validates: Requirements 6.1**
 
-  - [ ]* 6.5 Write property test for stuck-job recovery
+  - [x]* 6.5 Write property test for stuck-job recovery
     - **Property 16: Stuck jobs recover to PENDING**
     - **Validates: Requirements 7.1**
 
-  - [ ]* 6.6 Write property test for retry reset
+  - [x]* 6.6 Write property test for retry reset
     - **Property 17: Retry resets a FAILED record to PENDING**
     - **Validates: Requirements 7.2**
 
-  - [ ]* 6.7 Write unit test for a healthy health-check response
+  - [x]* 6.7 Write unit test for a healthy health-check response
     - Confirm `/health/ready` and `/health/live` succeed under normal conditions
     - _Requirements: 5.1_
 
-- [ ] 7. Checkpoint - backend runnable and tested
+- [x] 7. Checkpoint - backend runnable and tested
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 8. Implement the processing worker (FFmpeg renditions, thumbnail, recovery)
-  - [ ] 8.1 Implement job loop with atomic claim and status transition
+  - [x] 8.1 Implement job loop with atomic claim and status transition
     - Node + TypeScript worker that polls the backend's `claimNext` (or DB via backend) to atomically move one `PENDING` record to `PROCESSING`, reads `originals/<id>.mp4` from `/uploads`
     - _Requirements: 6.1_
 
-  - [ ] 8.2 Implement downscale-only rendition + thumbnail transcode with atomic tmp-then-rename
+  - [x] 8.2 Implement downscale-only rendition + thumbnail transcode with atomic tmp-then-rename
     - Use `fluent-ffmpeg`/FFmpeg to scale to 2K/1080p/720p/480p with aspect ratio preserved and downscale-only (small sources skip higher renditions), extract one thumbnail frame, write all outputs to `tmp/<id>/` and atomically move into `renditions/<id>/` and `thumbnails/<id>.jpg` on success
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 8.3 Wire completion/failure/retry callbacks to the backend
+  - [x] 8.3 Wire completion/failure/retry callbacks to the backend
     - On success call `updateProcessingResult(COMPLETED, refs)`; on any error call `updateProcessingResult(FAILED, error)` leaving the original intact; ensure a retried run cleans `tmp/<id>/` and reproduces a full equivalent output set
     - _Requirements: 6.4, 6.5, 7.3_
 
-  - [ ]* 8.4 Write property test for complete output set on success
+  - [x]* 8.4 Write property test for complete output set on success
     - **Property 13: Successful processing produces a complete output set** (validate against a stubbed FFmpeg for speed)
     - **Validates: Requirements 6.2, 6.3**
 
-  - [ ]* 8.5 Write property test for output completeness implying COMPLETED
+  - [x]* 8.5 Write property test for output completeness implying COMPLETED
     - **Property 14: Output completeness implies COMPLETED**
     - **Validates: Requirements 6.4**
 
-  - [ ]* 8.6 Write property test for failure implying FAILED
+  - [x]* 8.6 Write property test for failure implying FAILED
     - **Property 15: Processing failure implies FAILED**
     - **Validates: Requirements 6.5**
 
-  - [ ]* 8.7 Write property test for retry idempotence
+  - [x]* 8.7 Write property test for retry idempotence
     - **Property 18: Retry produces an equivalent output set (idempotence)**
     - **Validates: Requirements 7.3**
 
-  - [ ]* 8.8 Write integration pass with real FFmpeg on the Sample_Video
+  - [x]* 8.8 Write integration pass with real FFmpeg on the Sample_Video
     - Run the real FFmpeg path once on the sample to confirm the stub matches reality
     - _Requirements: 6.2, 6.3_
 
@@ -199,7 +199,7 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Review each `fast-check` generator/assertion; inject a known bug and confirm the relevant property fails, then restore; record in `docs/ai-usage-log.md`
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 7.3_
 
-- [ ] 9. Add the Sample_Video and demonstrate end-to-end flow locally
+- [x] 9. Add the Sample_Video and demonstrate end-to-end flow locally
   - Add one short MP4 `Sample_Video` under `/samples`; run backend + worker locally against the temp storage to confirm upload → PENDING → PROCESSING → COMPLETED with renditions and thumbnail
   - _Requirements: 6.6_
 

@@ -4,12 +4,20 @@ import { GraphQLError } from 'graphql';
 // + NestJS 10 stack used here (graphql-upload v16 is ESM-only and does not interop cleanly).
 import { GraphQLUpload, type FileUpload } from 'graphql-upload-minimal';
 import { Inject } from '@nestjs/common';
-import { MetadataStore, ProcessingStatus, UploadRecord } from '@video-platform/shared';
+import {
+  MetadataStore,
+  ProcessingStatus,
+  Rendition,
+  RenditionLabel,
+  UploadRecord,
+} from '@video-platform/shared';
 import { METADATA_STORE } from '../storage.tokens';
+import { fileRouteUrl } from '../files/file-route';
 import { InvalidMp4Error } from '../mp4-validation';
 import { IncomingUpload, UploadService } from './upload.service';
 import {
   ProcessingResultInput,
+  RenditionModel,
   UploadRecordModel,
   VideoMetadataModel,
 } from '../graphql/models';
@@ -22,6 +30,35 @@ function toModel(record: UploadRecord): UploadRecordModel {
     uploadedAt: new Date(record.uploadedAt),
     status: record.status,
   };
+}
+
+/** Map a stored Rendition (relative path) to the GraphQL RenditionModel with a file-route URL. */
+function toRenditionModel(rendition: Rendition): RenditionModel {
+  return {
+    label: rendition.label,
+    url: fileRouteUrl(rendition.path),
+    width: rendition.width,
+    height: rendition.height,
+  };
+}
+
+/**
+ * Build a mapper from a GraphQL RenditionInput to a stored Rendition row for `uploadId`. Returns a
+ * curried function so it can be used directly with `Array.prototype.map`.
+ */
+function toRenditionRow(uploadId: string) {
+  return (input: {
+    label: string;
+    path: string;
+    width?: number | null;
+    height?: number | null;
+  }): Rendition => ({
+    uploadId,
+    label: input.label as RenditionLabel,
+    path: input.path,
+    width: input.width ?? null,
+    height: input.height ?? null,
+  });
 }
 
 /**
@@ -78,7 +115,9 @@ export class UploadResolver {
   }
 
   @Query(() => VideoMetadataModel, {
-    description: 'Video metadata (renditions/thumbnail); fully implemented in Task 5.',
+    description:
+      'Rendition/thumbnail metadata for an upload. References are only returned once the record ' +
+      'is COMPLETED; otherwise only the current status is returned (Reqs 4.1, 4.2, 4.5).',
   })
   videoMetadata(@Args('id', { type: () => ID }) id: string): VideoMetadataModel {
     const record = this.metadata.getUpload(id);
@@ -87,31 +126,70 @@ export class UploadResolver {
         extensions: { code: 'NOT_FOUND' },
       });
     }
-    return { id: record.id, status: record.status, renditions: [], thumbnailUrl: null };
+
+    // Withhold rendition/thumbnail references until processing has COMPLETED (Req 4.5).
+    if (record.status !== ProcessingStatus.COMPLETED) {
+      return { id: record.id, status: record.status, renditions: [], thumbnailUrl: null };
+    }
+
+    // COMPLETED: expose every produced rendition and the thumbnail as file-route URLs (Reqs 4.1–4.4).
+    const renditions = this.metadata.getRenditions(record.id).map(toRenditionModel);
+    const thumbnailUrl = record.thumbnailPath ? fileRouteUrl(record.thumbnailPath) : null;
+    return { id: record.id, status: record.status, renditions, thumbnailUrl };
   }
 
   @Mutation(() => UploadRecordModel, {
-    description: 'Internal: processing component reports a result (fully implemented in Task 6).',
+    nullable: true,
+    description:
+      'Internal: atomically claim the next PENDING record for processing, moving it to PROCESSING ' +
+      'and returning it (or null when nothing is pending). Exclusive across workers (Req 6.1).',
+  })
+  claimNext(): UploadRecordModel | null {
+    const claimed = this.metadata.claimNext();
+    return claimed ? toModel(claimed) : null;
+  }
+
+  @Mutation(() => UploadRecordModel, {
+    description:
+      'Internal: the processing component reports a result. The backend is the sole writer of ' +
+      'metadata.db, so all status/rendition/thumbnail updates flow through here (Reqs 6.4, 6.5).',
   })
   updateProcessingResult(
     @Args('input') input: ProcessingResultInput,
   ): UploadRecordModel {
+    // Persist status plus any thumbnail/error the worker reported. On a terminal transition we also
+    // clear processing_started_at so the record is no longer considered "in flight" by stuck-job
+    // recovery. On COMPLETED/FAILED there is no in-flight processing to track.
+    const clearProcessingStart =
+      input.status === ProcessingStatus.COMPLETED ||
+      input.status === ProcessingStatus.FAILED;
+
     const updated = this.metadata.updateUpload(input.id, {
       status: input.status,
       thumbnailPath: input.thumbnailPath ?? undefined,
       error: input.error ?? undefined,
+      processingStartedAt: clearProcessingStart ? null : undefined,
     });
+
+    // Record the produced renditions when supplied (Req 4.1 metadata later reads these back).
+    if (input.renditions) {
+      this.metadata.setRenditions(input.id, input.renditions.map(toRenditionRow(input.id)));
+    }
+
     return toModel(updated);
   }
 
   @Mutation(() => UploadRecordModel, {
-    description: 'Reset a FAILED record to PENDING (fully implemented in Task 6).',
+    description: 'Documented manual retry: reset a FAILED record to PENDING for reprocessing (Req 7.2).',
   })
   retryProcessing(@Args('id', { type: () => ID }) id: string): UploadRecordModel {
-    const updated = this.metadata.updateUpload(id, {
-      status: ProcessingStatus.PENDING,
-      error: null,
-    });
-    return toModel(updated);
+    try {
+      return toModel(this.metadata.retryProcessing(id));
+    } catch (err) {
+      // Surface a descriptive, client-facing error for unknown ids or non-FAILED records.
+      throw new GraphQLError((err as Error).message, {
+        extensions: { code: 'RETRY_NOT_ALLOWED' },
+      });
+    }
   }
 }

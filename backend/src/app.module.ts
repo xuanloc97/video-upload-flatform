@@ -2,6 +2,7 @@ import { join } from 'path';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { DynamicModule, Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
+import { TerminusModule } from '@nestjs/terminus';
 import {
   FileSystemStorage,
   MetadataStore,
@@ -10,6 +11,9 @@ import {
 } from '@video-platform/shared';
 import { METADATA_STORE, MP4_PROBE, STORAGE } from './storage.tokens';
 import { FfprobeMp4Probe } from './ffprobe-mp4-probe';
+import { FileController } from './files/file.controller';
+import { HealthController } from './health/health.controller';
+import { UploadsHealthIndicator } from './health/uploads.health';
 import { UploadResolver } from './upload/upload.resolver';
 import { UploadService } from './upload/upload.service';
 
@@ -44,7 +48,9 @@ export class AppModule {
           autoSchemaFile: join(process.cwd(), 'schema.gql'),
           sortSchema: true,
         }),
+        TerminusModule,
       ],
+      controllers: [FileController, HealthController],
       providers: [
         {
           provide: STORAGE,
@@ -68,6 +74,7 @@ export class AppModule {
         },
         UploadService,
         UploadResolver,
+        UploadsHealthIndicator,
       ],
     };
   }
