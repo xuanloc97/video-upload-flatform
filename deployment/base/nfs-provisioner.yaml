@@ -1,0 +1,278 @@
+# In-cluster userspace NFS server + dynamic RWX provisioner.
+#
+# Uses the sig-storage nfs-ganesha based external provisioner
+# (registry.k8s.io/sig-storage/nfs-provisioner). Unlike a kernel-NFS server,
+# nfs-ganesha runs entirely in userspace and can export an overlayfs-backed
+# directory, which is exactly what a single-node `kind` cluster provides for
+# hostPath/emptyDir volumes. This replaces the previous kernel-NFS server
+# (itsthenetwork/nfs-server-alpine) that crash-looped on kind with
+# "exportfs: /nfsshare does not support NFS export".
+#
+# The provisioner dynamically creates PersistentVolumes for any PVC that
+# requests the `nfs` StorageClass, exporting a subdirectory of its own
+# hostPath-backed /export directory over NFSv4.1. Because /export is backed by
+# a node-local hostPath (DirectoryOrCreate), the exported data outlives
+# individual application pods (durability, Req 1.4).
+#
+# NOTE: single-node, local-only setup intended for `kind`. Not production HA.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nfs-provisioner
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nfs-provisioner-runner
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+rules:
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get"]
+  - apiGroups: ["extensions"]
+    resources: ["podsecuritypolicies"]
+    resourceNames: ["nfs-provisioner"]
+    verbs: ["use"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: run-nfs-provisioner
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+subjects:
+  - kind: ServiceAccount
+    name: nfs-provisioner
+    # Namespace is set by kustomize (video-platform); pinned here so the
+    # ClusterRoleBinding subject resolves even outside kustomize.
+    namespace: video-platform
+roleRef:
+  kind: ClusterRole
+  name: nfs-provisioner-runner
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-nfs-provisioner
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: leader-locking-nfs-provisioner
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+subjects:
+  - kind: ServiceAccount
+    name: nfs-provisioner
+    namespace: video-platform
+roleRef:
+  kind: Role
+  name: leader-locking-nfs-provisioner
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nfs-provisioner
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: nfs-provisioner
+  ports:
+    - name: nfs
+      port: 2049
+      protocol: TCP
+    - name: nfs-udp
+      port: 2049
+      protocol: UDP
+    - name: nlockmgr
+      port: 32803
+      protocol: TCP
+    - name: nlockmgr-udp
+      port: 32803
+      protocol: UDP
+    - name: mountd
+      port: 20048
+      protocol: TCP
+    - name: mountd-udp
+      port: 20048
+      protocol: UDP
+    - name: rquotad
+      port: 875
+      protocol: TCP
+    - name: rquotad-udp
+      port: 875
+      protocol: UDP
+    - name: rpcbind
+      port: 111
+      protocol: TCP
+    - name: rpcbind-udp
+      port: 111
+      protocol: UDP
+    - name: statd
+      port: 662
+      protocol: TCP
+    - name: statd-udp
+      port: 662
+      protocol: UDP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nfs-provisioner
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nfs-provisioner
+  strategy:
+    # The hostPath-backed /export directory has a single writer; never run two
+    # ganesha servers against the same node directory during a rollout.
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nfs-provisioner
+        app.kubernetes.io/component: storage
+    spec:
+      serviceAccountName: nfs-provisioner
+      containers:
+        - name: nfs-provisioner
+          # nfs-ganesha userspace NFS server + external provisioner, pinned
+          # (no `latest`). Exports fine on kind's overlay filesystem.
+          image: registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8
+          ports:
+            - name: nfs
+              containerPort: 2049
+              protocol: TCP
+            - name: nfs-udp
+              containerPort: 2049
+              protocol: UDP
+            - name: nlockmgr
+              containerPort: 32803
+              protocol: TCP
+            - name: nlockmgr-udp
+              containerPort: 32803
+              protocol: UDP
+            - name: mountd
+              containerPort: 20048
+              protocol: TCP
+            - name: mountd-udp
+              containerPort: 20048
+              protocol: UDP
+            - name: rquotad
+              containerPort: 875
+              protocol: TCP
+            - name: rquotad-udp
+              containerPort: 875
+              protocol: UDP
+            - name: rpcbind
+              containerPort: 111
+              protocol: TCP
+            - name: rpcbind-udp
+              containerPort: 111
+              protocol: UDP
+            - name: statd
+              containerPort: 662
+              protocol: TCP
+            - name: statd-udp
+              containerPort: 662
+              protocol: UDP
+          args:
+            - "-provisioner=example.com/nfs"
+          securityContext:
+            # nfs-ganesha manages kernel mounts and dbus export registration
+            # (rpc.mountd / AddExport with the VFS FSAL). On kind this requires
+            # privileged mode; the reduced-capability set
+            # (DAC_READ_SEARCH/SYS_RESOURCE) is insufficient and causes
+            # "error exporting export block". Local single-node demo only.
+            privileged: true
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SERVICE_NAME
+              value: nfs-provisioner
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: export-volume
+              mountPath: /export
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: export-volume
+          # Backing store for every dynamically provisioned export.
+          #
+          # IMPORTANT (kind limitation): a hostPath on a kind node is backed by
+          # the node's overlay filesystem, which nfs-ganesha's VFS FSAL cannot
+          # export (AddExport fails with "error exporting export block"). The
+          # kernel-NFS server image fails the same way ("does not support NFS
+          # export"). An emptyDir is backed by a filesystem ganesha CAN export,
+          # so it is used here for the local single-node demo.
+          #
+          # Durability characteristics on this demo: exported data survives
+          # restarts/rescheduling of CONSUMER pods (backend/processing), which
+          # is what Req 1.4 / 12.1 / 12.2 require and what the failover tests
+          # demonstrate. It does NOT survive a restart of the nfs-provisioner
+          # pod itself (the storage server), consistent with the design's
+          # "ephemeral node-backed storage" assumption. Production uses a real
+          # RWX filesystem or object storage instead.
+          emptyDir: {}
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs
+  labels:
+    app.kubernetes.io/name: nfs-provisioner
+    app.kubernetes.io/component: storage
+# Must match the -provisioner arg on the Deployment above.
+provisioner: example.com/nfs
+reclaimPolicy: Retain
+mountOptions:
+  - vers=4.1

@@ -1,0 +1,20 @@
+{
+  "name": "video-upload-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Video upload and processing platform on local Kubernetes (React + NestJS/GraphQL + FFmpeg + NFS).",
+  "license": "MIT",
+  "workspaces": [
+    "shared",
+    "backend",
+    "processing"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "tsc --build"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,26 @@
+# ReadWriteMany claim for shared upload storage, dynamically provisioned by the
+# in-cluster nfs-ganesha provisioner (see nfs-provisioner.yaml).
+#
+# There is intentionally NO static PersistentVolume here: the `nfs`
+# StorageClass provisions a PV on demand, backed by the provisioner's
+# hostPath-backed /export directory. Both backend and processing pods mount
+# this claim at /uploads for concurrent access (Req 1.1, 1.2, 10.3), and the
+# provisioner's node-local export outlives consumer pods (durability, Req 1.4).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-pvc
+  labels:
+    app.kubernetes.io/name: uploads
+spec:
+  accessModes:
+    - ReadWriteMany
+  # Dynamic provisioning via the in-cluster NFS provisioner.
+  storageClassName: nfs
+  resources:
+    requests:
+      # Sized for a local single-node kind demo. The nfs-ganesha provisioner
+      # validates the request against free space on the node's backing disk,
+      # so this stays modest; a real deployment would use a larger, dedicated
+      # volume.
+      storage: 5Gi

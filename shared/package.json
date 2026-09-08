@@ -1,0 +1,25 @@
+{
+  "name": "@video-platform/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript types and storage/metadata abstractions used by backend and processing.",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "better-sqlite3": "^8.7.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.4",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^18.19.0",
+    "fast-check": "^3.15.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.3.0"
+  }
+}
