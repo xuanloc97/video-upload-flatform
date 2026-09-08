@@ -206,24 +206,24 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
 - [x] 10. Checkpoint - processing pipeline runnable end to end
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Implement the frontend (React SPA)
-  - [ ] 11.1 Scaffold React + TypeScript + Vite app with Apollo Client
+- [x] 11. Implement the frontend (React SPA)
+  - [x] 11.1 Scaffold React + TypeScript + Vite app with Apollo Client
     - Set up Apollo Client and `apollo-upload-client`; ensure all API access goes exclusively through GraphQL
     - _Requirements: 9.5_
 
-  - [ ] 11.2 Implement upload view with success/error feedback
+  - [x] 11.2 Implement upload view with success/error feedback
     - `<input type="file" accept="video/mp4">` + submit; upload via GraphQL; show a success indication on confirmation and a failure indication with the returned error message
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-  - [ ] 11.3 Implement list/status view with polling
+  - [x] 11.3 Implement list/status view with polling
     - Display the list of uploads with filename, upload time, and live status badges; poll `videos`/`videoStatus` to reflect transitions
     - _Requirements: 9.1, 9.2_
 
-  - [ ] 11.4 Implement thumbnail display and rendition playback/links
+  - [x] 11.4 Implement thumbnail display and rendition playback/links
     - For `COMPLETED` records show the thumbnail and provide access to each available rendition via an HTML5 `<video>` player / links using backend file URLs
     - _Requirements: 9.3, 9.4_
 
-  - [ ]* 11.5 Write component tests (React Testing Library)
+  - [x]* 11.5 Write component tests (React Testing Library)
     - File-select control, upload submission wiring, success/error banners, list rendering with status badges, thumbnail display and rendition links for COMPLETED records
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 9.1, 9.2, 9.3, 9.4_
 
