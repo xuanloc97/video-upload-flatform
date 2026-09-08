@@ -227,7 +227,7 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - File-select control, upload submission wiring, success/error banners, list rendering with status badges, thumbnail display and rendition links for COMPLETED records
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 9.1, 9.2, 9.3, 9.4_
 
-- [ ] 12. Checkpoint - full stack runnable locally
+- [x] 12. Checkpoint - full stack runnable locally
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 13. Containerize and author Kubernetes deployment artifacts
