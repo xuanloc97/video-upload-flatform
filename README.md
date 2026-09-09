@@ -1,31 +1,177 @@
 # Video Upload Platform
 
-A small but fully working video upload and processing platform deployed on a local Kubernetes
-environment. Users upload MP4 videos (including 4K) through a React frontend; a NestJS GraphQL
-backend stores them on an NFS-backed shared filesystem; and a dedicated FFmpeg processing worker
-transcodes each upload into multiple resolutions plus a thumbnail.
+A small but fully working video upload and processing platform that runs on a local Kubernetes
+cluster. Users upload MP4 videos (including 4K) through a React frontend; a NestJS GraphQL backend
+validates and stores them on an NFS-backed shared filesystem; and a dedicated FFmpeg worker
+transcodes each upload into multiple resolutions (2K / 1080p / 720p / 480p, downscale-only) plus a
+thumbnail. Status flows `PENDING → PROCESSING → COMPLETED` (or `FAILED`) and the frontend polls it
+live.
 
-> **Status:** scaffolding in progress. This README is a stub and will be completed in a later task
-> (see `.kiro/specs/video-upload-platform/tasks.md`, Task 17.1).
+- **Frontend:** React + TypeScript + Vite, Apollo Client (`apollo-upload-client`), served by NGINX.
+- **Backend:** NestJS + Apollo Server (GraphQL), streaming uploads, single-writer SQLite metadata,
+  `@nestjs/terminus` health checks, an HTTP file route with range support.
+- **Processing:** Node + TypeScript worker using FFmpeg; atomic job claim + tmp-then-rename output.
+- **Shared storage:** a single `ReadWriteMany` NFS volume mounted at `/uploads` by backend and
+  worker; also holds `metadata.db`.
+- **Deployment:** Kustomize (`base` + `dev`/`ha` overlays), an in-cluster NFS provisioner, and an
+  NGINX Ingress, all on `kind`.
+
+See [`docs/architecture.md`](docs/architecture.md) for the design and trade-offs, and
+[`docs/production-notes.md`](docs/production-notes.md) for how this would change at production scale.
 
 ## Repository structure
 
 ```
-/frontend      # React SPA
-/backend       # NestJS GraphQL service
-/processing    # FFmpeg worker
-/shared        # Shared TypeScript types + storage/metadata abstractions (used by backend & processing)
-/deployment    # Kustomize base + overlays, NFS, ingress
-/scripts       # build.sh, deploy.sh, cleanup.sh
-/docs          # architecture.md, failover-test.md, production-notes.md, ai-usage-log.md
-/samples       # Sample_Video
-README.md
+/frontend      # React SPA (Vite)            — standalone package
+/backend       # NestJS GraphQL service      — npm workspace
+/processing    # FFmpeg worker               — npm workspace
+/shared        # Shared types + Storage/MetadataStore abstractions — npm workspace
+/deployment    # Kustomize base + overlays (dev, ha), NFS, ingress, kind config
+/scripts       # build.sh, deploy.sh, cleanup.sh (+ WSL helper scripts)
+/docs          # architecture.md, production-notes.md, failover-test.md, ai-usage-log.md
+/samples       # sample-video.mp4 (the Sample_Video)
 ```
 
 ## Prerequisites
 
-To be documented (Docker, `kubectl`, `kind`, Node.js). See Task 17.1.
+- **Docker** (running)
+- **kind** (Kubernetes in Docker) and **kubectl**
+- **Node.js >= 18** (Node 20 recommended) and npm — for building/testing locally
+- **FFmpeg** (`ffmpeg` + `ffprobe`) — only needed to run the worker/tests outside a container; the
+  processing container image bundles its own FFmpeg
 
-## Quick start
+> **Memory:** a `kind` control-plane plus this stack needs a host with enough RAM (≈8 GB+ free is
+> comfortable; ~5 GB works for the single-replica `dev` overlay). On Windows/WSL2 you must raise the
+> WSL2 memory limit — see [Windows / WSL2](#windows--wsl2-notes) and
+> [`deployment/wslconfig.sample`](deployment/wslconfig.sample). A ~4 GB host is not enough to run the
+> cluster.
 
-To be documented. See Task 17.1.
+## Build and test the code (no cluster)
+
+```bash
+npm install                     # installs the shared/backend/processing workspaces
+npm run build                   # tsc --build across the workspaces
+npm test --workspaces --if-present   # shared + backend + processing test suites
+
+# Frontend is a separate package:
+cd frontend && npm install && npm run build && npm test
+```
+
+## Run on Kubernetes (kind)
+
+All commands assume Docker is running and your shell can reach `kind`/`kubectl`.
+
+### 1. Create the cluster (with ingress-ready port mappings)
+
+```bash
+kind create cluster --config deployment/kind-cluster.yaml
+```
+
+### 2. Install the NGINX ingress controller
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+kubectl wait --namespace ingress-nginx \
+  --for=condition=Ready pod \
+  --selector=app.kubernetes.io/component=controller --timeout=180s
+```
+
+### 3. Build the images and load them into kind
+
+```bash
+bash scripts/build.sh video-platform
+```
+
+This builds `video-platform/{backend,processing,frontend}:dev` and `kind load`s them into the
+cluster named `video-platform`.
+
+### 4. Deploy
+
+```bash
+# dev = single replica per tier (lighter); ha = backend/frontend x2 + zero-downtime backend rollout
+bash scripts/deploy.sh dev      # or: bash scripts/deploy.sh ha
+```
+
+`deploy.sh` prints the target kube-context and asks for confirmation before applying (set
+`CONFIRM=yes` to skip the prompt in automation). It waits for the rollouts and prints how to reach
+the app.
+
+### 5. Access the frontend (Access_Endpoint)
+
+With the ingress controller installed and the kind port mappings, browse to:
+
+```
+http://localhost/
+```
+
+**Fallback (no ingress):** port-forward the two Services and use the frontend directly:
+
+```bash
+kubectl -n video-platform port-forward svc/frontend 8080:80
+kubectl -n video-platform port-forward svc/backend  3000:3000
+# then open http://localhost:8080/
+```
+
+## Upload and process the Sample_Video
+
+A short real MP4 lives at [`samples/sample-video.mp4`](samples/sample-video.mp4) (1280×720, ~3 s).
+You can regenerate it with `bash scripts/generate-sample.sh`.
+
+1. Open the frontend, choose `samples/sample-video.mp4`, and click **Upload**. A success banner
+   confirms the upload; the video appears in the list as **Pending**.
+2. The worker claims the job (**Processing**) and, when done, the row shows **Completed**.
+3. Click **View** on the completed row to see the **thumbnail** and play each **rendition** (720p,
+   480p for this source — downscale-only, so a 720p source produces no 2K/1080p).
+
+### Verify renditions and the thumbnail
+
+```bash
+# List the produced files on the shared volume (via a backend pod):
+POD=$(kubectl -n video-platform get pod -l app.kubernetes.io/name=backend -o name | head -1)
+kubectl -n video-platform exec "$POD" -- ls -R /uploads/renditions /uploads/thumbnails
+
+# Or inspect a rendition's dimensions with ffprobe (from the processing pod, which has ffprobe):
+PROC=$(kubectl -n video-platform get pod -l app.kubernetes.io/name=processing -o name | head -1)
+kubectl -n video-platform exec "$PROC" -- ffprobe -v error \
+  -show_entries stream=width,height -of csv=p=0 /uploads/renditions/<id>/720p.mp4
+```
+
+The GraphQL `videoMetadata(id)` query returns the thumbnail URL and rendition file URLs once a
+record is `COMPLETED`; the frontend uses those `/files/...` URLs for display and playback.
+
+## Failover tests
+
+See [`docs/failover-test.md`](docs/failover-test.md) for the multi-replica failover and
+rolling-update procedures (terminate a backend/frontend replica and confirm the tier keeps serving;
+delete/recreate a backend pod and confirm previously uploaded files survive; run a rollout with a
+request loop and confirm zero failed requests, then `kubectl rollout undo`).
+
+## Cleanup
+
+```bash
+bash scripts/cleanup.sh dev     # or: ha — matches the overlay you deployed
+```
+
+This deletes the overlay's resources and the `video-platform` namespace (namespace-scoped; it does
+not touch the rest of your cluster). To remove the whole local cluster:
+
+```bash
+kind delete cluster --name video-platform
+```
+
+## Windows / WSL2 notes
+
+This project was built and tested on **WSL2 (Ubuntu)** on Windows. Node/npm, FFmpeg, kind, and
+kubectl all run inside WSL against the repo on `/mnt/...`. A few conveniences and gotchas:
+
+- **Helper scripts** in `scripts/` (prefixed `wsl-`) wrap the common flows with the correct
+  environment (Node via `nvm`, kind on `PATH`) so you don't fight shell quoting: e.g.
+  `wsl-run.sh` (build/test), `wsl-test-all.sh`, `wsl-frontend.sh`, `wsl-kind-up.sh`,
+  `wsl-install-ingress.sh`, `wsl-build-images.sh`, `wsl-deploy-ha.sh`, `wsl-install-ffmpeg.sh`,
+  `wsl-install-kind.sh`.
+- **`$HOME` leak:** under PowerShell→WSL interop `$HOME` can arrive as a Windows path
+  (`C:UsersAdmin`); the helper scripts force `export HOME=/home/$(whoami)` before using `nvm`.
+- **Slow `/mnt/d` I/O:** tests use raised timeouts because the Windows-mounted filesystem is slow.
+- **WSL2 memory:** raise it via `C:\Users\<you>\.wslconfig` before running kind — see
+  [`deployment/wslconfig.sample`](deployment/wslconfig.sample). On a ~4 GB host the kind cluster
+  will OOM; use a larger host (or a non-Windows machine) for the Kubernetes steps.

@@ -1,0 +1,67 @@
+# Processing worker (FFmpeg) Deployment.
+#
+# Intentionally single-replica: the metadata store is single-writer SQLite and the DB-status queue
+# is claimed serially, so more workers would add contention without real parallelism. Correctness
+# across restarts comes from atomic job-claim + stuck-job recovery, not from replicas. Mounts the
+# shared /uploads PVC (same as the backend) to read originals and write renditions/thumbnails, and
+# reports results to the backend over internal GraphQL. Has no Service (it makes outbound calls).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: processing
+  labels:
+    app.kubernetes.io/name: processing
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  strategy:
+    # Never run two workers against the single-writer queue during a rollout.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: processing
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: processing
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: processing
+          image: video-platform/processing:dev
+          env:
+            - name: UPLOADS_DIR
+              value: /uploads
+            - name: BACKEND_GRAPHQL_URL
+              value: http://backend:3000/graphql
+            - name: POLL_INTERVAL_MS
+              value: "2000"
+          volumeMounts:
+            - name: uploads
+              mountPath: /uploads
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              # FFmpeg transcoding is CPU-heavy; give it more headroom than the API.
+              cpu: "2"
+              memory: 1Gi
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads-pvc
+        - name: tmp
+          # Scratch space for FFmpeg with a read-only root filesystem.
+          emptyDir: {}

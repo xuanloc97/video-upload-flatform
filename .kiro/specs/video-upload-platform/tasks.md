@@ -230,28 +230,28 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
 - [x] 12. Checkpoint - full stack runnable locally
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Containerize and author Kubernetes deployment artifacts
-  - [ ] 13.1 Write Dockerfiles for backend, processing (with FFmpeg), and frontend (NGINX static)
+- [x] 13. Containerize and author Kubernetes deployment artifacts
+  - [x] 13.1 Write Dockerfiles for backend, processing (with FFmpeg), and frontend (NGINX static)
     - Multi-stage builds producing small images; frontend served as static assets by NGINX
     - _Requirements: 10.2, 10.7_
 
-  - [ ] 13.2 Author Kustomize base manifests for all workloads
+  - [x] 13.2 Author Kustomize base manifests for all workloads
     - Deployments + Services for frontend, backend, processing; mount `uploads-pvc` at `/uploads` in backend and processing; add resource limits, non-root securityContext, and correct image references; backend liveness/readiness probes hit `/health/live` and `/health/ready`
     - _Requirements: 10.1, 10.2, 10.5_
 
-  - [ ] 13.3 Author NGINX Ingress and document port-forward fallback
+  - [x] 13.3 Author NGINX Ingress and document port-forward fallback
     - Route `/` → frontend and `/graphql`, `/health`, `/files` → backend; document `kubectl port-forward` as the fallback Access_Endpoint
     - _Requirements: 10.4_
 
-  - [ ] 13.4 Create dev and ha Kustomize overlays
+  - [x] 13.4 Create dev and ha Kustomize overlays
     - `overlays/dev` (single replicas) and `overlays/ha` (backend/frontend ≥2 replicas, processing single replica, tuned probes, `RollingUpdate` with `maxUnavailable: 0` for backend)
     - _Requirements: 10.1, 11.1, 11.2, 12.4_
 
-  - [ ] 13.5 Author build.sh, deploy.sh, and cleanup.sh
+  - [x] 13.5 Author build.sh, deploy.sh, and cleanup.sh
     - `build.sh` builds and `kind load`s images; `deploy.sh` applies the chosen overlay; `cleanup.sh` runs namespace-scoped `kubectl delete -k` (+ namespace deletion) to remove all resources
     - _Requirements: 10.6, 15.3_
 
-  - [ ] 13.6 Review generated manifests and shell scripts (HVC #8 and #9)
+  - [x] 13.6 Review generated manifests and shell scripts (HVC #8 and #9)
     - Review `kubectl kustomize overlays/ha` for resource limits, securityContext, image refs, and no hardcoded secrets; read each script line by line for destructive/wrong-context commands and confirm deletes are namespace-scoped and kube-context is checked; record both reviews in `docs/ai-usage-log.md`
     - _Requirements: 10.6, 10.x, 15.3_
 
@@ -280,20 +280,20 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
 - [ ] 16. Checkpoint - deployed, highly available, failover demonstrated
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 17. Complete documentation deliverables
-  - [ ] 17.1 Write README.md
+- [x] 17. Complete documentation deliverables
+  - [x] 17.1 Write README.md
     - Cover project overview, prerequisites, Kubernetes setup, build steps, deploy steps, frontend access, uploading and processing the Sample_Video, verifying renditions and the thumbnail, running failover tests, and cleanup
     - _Requirements: 13.1_
 
-  - [ ] 17.2 Write architecture.md
+  - [x] 17.2 Write architecture.md
     - Cover architecture overview, components, data flow, storage design, video processing design, failure handling, and trade-offs/limitations; explain why the shared-storage approach was chosen, how it works, its failover behavior, and reliability limitations
     - _Requirements: 13.2, 13.6_
 
-  - [ ] 17.3 Write production-notes.md
+  - [x] 17.3 Write production-notes.md
     - Cover scalability, large uploads, long-running processing, retry/failure handling, storage choice, security, observability, cost, CI/CD, and cloud deployment; explain how the design changes for larger workloads, high concurrency, long videos, and heavy transcoding traffic
     - _Requirements: 13.4, 13.5_
 
-  - [ ] 17.4 Finalize ai-usage-log.md and verify honesty (HVC #12)
+  - [x] 17.4 Finalize ai-usage-log.md and verify honesty (HVC #12)
     - Ensure the living log records tools used, purposes, representative prompts, accepted/rejected/modified outputs, verification steps, and AI mistakes discovered across all phases; read it end to end and confirm it matches reality
     - _Requirements: 14.1, 14.2, 14.3_
 

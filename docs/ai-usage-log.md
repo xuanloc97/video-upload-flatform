@@ -10,9 +10,11 @@
 
 | Tool / model | Where used |
 | --- | --- |
-| _TBD_ | Code generation, manifest authoring, test scaffolding, documentation |
+| Kiro (agentic AI coding assistant, in-IDE) | All code generation, GraphQL schema, Kubernetes/Kustomize manifests, Dockerfiles, shell scripts, test scaffolding (Jest/Vitest + fast-check), and this documentation. Also drove the local verification runs (WSL/Node/FFmpeg/kind) and recorded the HVC results. |
 
-_List each AI assistant/model and the surfaces it was used on. Update as tools are added._
+The work was performed interactively: the human directed each task, reviewed and accepted/rejected
+AI output, and signed off the Human Verification Checkpoints; the AI wrote the code/config/docs and
+ran the builds/tests.
 
 ## 2. Purpose per component
 
@@ -26,11 +28,27 @@ What AI was used for, per component. Filled in as each component is built.
   Apollo (code-first) app, the GraphQL schema (upload/list/status/metadata/processing mutations),
   the streaming `uploadVideo` path (graphql-upload-minimal → disk, no memory buffering), the
   injectable MP4 validation (ftyp magic bytes + ffprobe probe), and the property/unit tests.
-- **Processing (FFmpeg worker: renditions, thumbnail, recovery/retry):** _TBD_
-- **Frontend (React SPA: upload, listing, status, playback):** _TBD_
-- **Kubernetes (Kustomize base/overlays, NFS, ingress, scripts):** _TBD_
-- **High availability (replicas, probes, rolling updates, failover):** _TBD_
-- **Documentation (README, architecture, failover-test, production-notes):** _TBD_
+- **Processing (FFmpeg worker: renditions, thumbnail, recovery/retry):** AI authored the pure
+  downscale-only rendition planner, the injectable `Transcoder` (FFmpeg CLI) + `BackendClient`
+  abstractions, the `ProcessingWorker` job loop (atomic claim → transcode into `tmp/<id>/` → atomic
+  move → COMPLETED/FAILED callback), the entrypoint poll loop, and the property/integration tests
+  (Properties 13/14/15/18) plus a real-FFmpeg pass and the Sample_Video end-to-end demo.
+- **Frontend (React SPA: upload, listing, status, playback):** AI scaffolded the React + TypeScript
+  + Vite app, the Apollo Client (+ `apollo-upload-client`) setup, the upload/list/detail components
+  (GraphQL-only, polling, thumbnail + rendition playback), and React Testing Library component tests.
+- **Kubernetes (Kustomize base/overlays, NFS, ingress, scripts):** AI authored the three Dockerfiles
+  (multi-stage backend/processing with FFmpeg, frontend → NGINX static), the Kustomize base
+  workloads (backend/processing/frontend Deployments + Services, Ingress), the `dev` and `ha`
+  overlays, and the `build.sh` / `deploy.sh` / `cleanup.sh` scripts.
+- **High availability (replicas, probes, rolling updates, failover):** AI authored the `ha` overlay
+  (backend/frontend ≥2 replicas, `RollingUpdate` with `maxUnavailable: 0` for the backend,
+  single-replica worker) and the liveness/readiness probes wired to `/health/live` and
+  `/health/ready`. The live failover verification (Tasks 14/15, HVC #3/#6/#7) is **blocked on this
+  machine** by the WSL2 memory limit — see section 7; the manifests render cleanly and are ready to
+  verify on a host with adequate RAM.
+- **Documentation (README, architecture, failover-test, production-notes):** AI wrote `README.md`,
+  `docs/architecture.md`, `docs/production-notes.md`, and this `ai-usage-log.md`, all grounded in the
+  code/config actually produced (including honest notes on what was and was not verified live).
 
 ## 3. Representative prompts / prompt summaries
 
@@ -41,6 +59,23 @@ Important prompts, or concise summaries of them, enough for a reviewer to unders
   (`/frontend`, `/backend`, `/processing`, `/deployment`, `/scripts`, `/docs`, `/samples`, root
   `README.md`), root tooling (workspaces, shared `tsconfig`, `.gitignore`), this AI usage log, and a
   shared storage/metadata abstraction with temp-dir + temp-SQLite implementations for tests.
+- **Tasks 2–4 — storage foundation + backend upload/validation:** author the NFS RWX manifests and
+  the single-writer SQLite write path; then the NestJS/Apollo app with streaming `uploadVideo` and
+  MP4 validation (ftyp + ffprobe), with property tests for the upload correctness properties.
+- **Tasks 5–6 — backend listing/status/metadata/health + processing callbacks:** implement the
+  remaining queries, the range-capable `/files` route, Terminus health with an `/uploads` writable
+  check, and the `claimNext`/`updateProcessingResult`/`retryProcessing`/stuck-job-recovery surface.
+- **Task 8–9 — processing worker + Sample_Video:** build the FFmpeg worker (downscale-only ladder,
+  tmp-then-rename, COMPLETED/FAILED callbacks) with property tests, a real-FFmpeg integration pass,
+  and an end-to-end demo driving the committed Sample_Video through the full pipeline.
+- **Task 11 — frontend:** scaffold the React/Vite SPA talking to the backend exclusively over
+  GraphQL (Apollo + apollo-upload-client): upload view, polled list with status badges, and
+  thumbnail + rendition playback for completed records, with component tests.
+- **Task 13 — containerize + Kubernetes:** write the three Dockerfiles, the Kustomize base + `dev`/
+  `ha` overlays, the ingress, and the `build.sh`/`deploy.sh`/`cleanup.sh` scripts; review the
+  rendered manifests and scripts for safety (HVC #8/#9).
+- **Task 17 — documentation:** write the README, architecture, and production-notes docs and
+  finalize this log, grounded in what was actually built and honest about what was verified.
 
 ## 4. What AI generated
 
@@ -50,6 +85,22 @@ The artifacts produced (code, YAML, scripts, prose). Add entries as work is done
   `tsconfig.json`, `.gitignore`, `README.md` stub, directory scaffold, this log, and the `shared`
   package (`Storage` interface + filesystem/temp-dir implementations, `MetadataStore` interface +
   temp-SQLite implementation, shared domain types).
+- **Tasks 5–9:** backend listing/status/metadata resolvers + `/files` range-serving controller
+  (Task 5); Terminus health checks + processing callbacks `claimNext`/`updateProcessingResult`/
+  `retryProcessing` + stuck-job recovery (Task 6); the processing worker package (Task 8); the
+  committed `samples/sample-video.mp4` + generator + end-to-end demo (Task 9).
+- **Task 11:** the `frontend` React SPA (Apollo client, upload/list/detail components, component
+  tests).
+- **Task 13:** `backend/Dockerfile`, `processing/Dockerfile` (with FFmpeg), `frontend/Dockerfile` +
+  `nginx.conf`, `.dockerignore` files; Kustomize base `backend.yaml`/`processing.yaml`/
+  `frontend.yaml`/`ingress.yaml` (+ updated base kustomization); `overlays/dev` and `overlays/ha`;
+  `scripts/build.sh`, `scripts/deploy.sh`, `scripts/cleanup.sh`.
+- **Task 14 (partial):** `deployment/kind-cluster.yaml`, `deployment/wslconfig.sample`, and the WSL
+  helper scripts for the cluster flow (`wsl-install-kind.sh`, `wsl-kind-up.sh`,
+  `wsl-install-ingress.sh`, `wsl-build-images.sh`, `wsl-deploy-ha.sh`, etc.). The cluster was
+  created and the stack applied, but HVC #3/#6 could not be completed — see section 7.
+- **Task 17:** `README.md`, `docs/architecture.md`, `docs/production-notes.md`, and the finalization
+  of this `ai-usage-log.md`.
 
 ## 5. Accepted / rejected / modified outputs
 
@@ -107,6 +158,29 @@ result lands here.
   Every rejected case created NO Upload_Record and left NO file under `originals/`; the store ended
   with exactly the 2 accepted records. Verified via a throwaway script (since removed) on
   2026-09-07. Confirms Req 2.4 and 2.5. Human sign-off recorded.
+- **Tasks 5–12 — backend/processing/frontend suites.** After each task the relevant build and test
+  suites were run in WSL. Final full-stack checkpoint (Task 12): `tsc --build` clean for the Node
+  workspaces and `tsc --noEmit` + `vite build` clean for the frontend; tests green — shared 29/29,
+  backend 18/18, processing 14/14 (incl. a real-FFmpeg integration pass and the Sample_Video
+  end-to-end demo reaching COMPLETED with 720p+480p renditions + thumbnail), frontend 6/6.
+- **Task 13 — HVC #8 (manifest review) + HVC #9 (script review). PASSED.** Rendered both overlays
+  with the built-in kustomize (`kubectl kustomize deployment/overlays/dev` and `.../ha`) — both build
+  cleanly. Inspection of the rendered output confirmed:
+  * **Images:** every workload references a pinned tag — `video-platform/{backend,processing,frontend}:dev`
+    and the provisioner `registry.k8s.io/sig-storage/nfs-provisioner:v4.0.8`; no `:latest`.
+  * **Replicas:** dev = 1 per tier; ha = backend 2 / frontend 2 / processing 1 (single-writer worker).
+  * **Rolling update:** backend in ha has `strategy.rollingUpdate.maxUnavailable: 0`, `maxSurge: 1`.
+  * **Security:** backend + processing run `runAsNonRoot`, `readOnlyRootFilesystem: true`,
+    `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`; frontend runs non-root (uid 101).
+  * **Resources:** requests + limits set on every workload.
+  * **Secrets:** `grep -niE 'password|secret|token|apikey|private key'` on the rendered ha output
+    returned nothing — no hardcoded secrets.
+  * **Scripts:** `bash -n` on `build.sh`/`deploy.sh`/`cleanup.sh` all pass. `deploy.sh` and
+    `cleanup.sh` print the current kube-context and require confirmation (bypass only via explicit
+    `CONFIRM=yes`); `cleanup.sh` is namespace-scoped (`kubectl delete -k <overlay>` +
+    `kubectl delete namespace video-platform`, both `--ignore-not-found`) — no cluster-wide deletes,
+    no `kind delete cluster`, no `--all`. Human sign-off recorded. Note: a live `kind` deploy is
+    exercised in Task 14 (HVC #3/#6).
 
 ## 7. AI mistakes / hallucinations / unsafe suggestions discovered
 
@@ -137,11 +211,35 @@ assumptions discovered, and how they were caught and corrected (Req 14.3).
   provisioner validates the request against the kind node's free disk (~7.8GB) and rejected it with
   `insufficient available space`. Reduced the request to `5Gi` for the local demo.
 - **Task 4 — ffmpeg/ffprobe not installed in the dev environment (RESOLVED).** `which ffmpeg
-  ffprobe` initially returned nothing on this machine, so the MP4-validation property tests used an
-  injectable stub probe and the real-ffprobe 4K test self-skipped. Resolved by installing FFmpeg
-  9.0.1 via Homebrew (`brew install ffmpeg`); after install the real-ffprobe 4K test runs for real
-  (synthesizes a 3840x2160 clip and validates it) and HVC #1 was performed. FFmpeg still needs to be
-  baked into the processing container image for Task 8.
+  ffprobe` initially returned nothing, so the MP4-validation property tests used an injectable stub
+  probe and the real-ffprobe 4K test self-skipped. Originally resolved on macOS via Homebrew; after
+  the environment moved to Windows the toolchain was reinstalled inside WSL (static FFmpeg 7.0.2 into
+  `~/.local/bin`, no sudo). After install the real-ffprobe 4K test runs for real and HVC #1 was
+  performed. FFmpeg is also baked into the processing container image (Task 13.1).
+- **Task 14 — kind cluster unstable due to WSL2 memory limit (BLOCKED, root cause identified).**
+  Attempted the live deploy on kind. Built + loaded all three images and applied the manifests
+  successfully (namespace, services, deployments, PVC, ingress all created; frontend rolled out).
+  However the WSL2 VM repeatedly became unresponsive / self-restarted under load, dropping the kind
+  API server each time. Root cause: `/proc/meminfo` shows the WSL2 VM has only **~1.9 GB total RAM**
+  (`MemTotal ≈ 1904248 kB`) and there is no `~/.wslconfig`. A kind control-plane plus the HA stack
+  (backend×2 + processing/FFmpeg + nfs-provisioner + ingress) far exceeds that, so the VM OOMs.
+  This is an environment capacity limit, not a manifest/app defect — `kubectl kustomize` renders
+  cleanly and all app tests pass. Fix for the reviewer: create `C:\Users\<you>\.wslconfig` with
+  e.g. `[wsl2]\nmemory=8GB\nprocessors=4`, run `wsl --shutdown`, then re-run
+  `scripts/wsl-kind-up.sh` → `scripts/wsl-install-ingress.sh` → `scripts/build.sh video-platform`
+  → `CONFIRM=yes scripts/deploy.sh ha`. HVC #3/#6 (Task 14) and HVC #7 (Task 15) are deferred until
+  the cluster has adequate memory. **CAUTION observed:** the machine's default kube-context is a
+  production AWS EKS cluster; all cluster work was confined to the `kind-video-platform` context and
+  the deploy/cleanup scripts print + confirm the context before acting.
+- **Environment migration — macOS → Windows/WSL.** The project moved machines mid-build. Windows has
+  no Node/npm on PATH, so the Node toolchain (Node 20 via nvm), FFmpeg (static build), and all
+  build/test runs were set up inside WSL Ubuntu against the repo on `/mnt/d`. A WSL interop quirk was
+  found and worked around: `$HOME` can leak in as a Windows path (`C:UsersAdmin`) under
+  PowerShell→WSL, which sent `nvm` installs to a bad path; every helper script now forces
+  `export HOME=/home/$(whoami)`. Because `/mnt/d` I/O is slow, per-test timeouts were raised for
+  Jest (`--testTimeout`) and Vitest (`testTimeout` in config); two tests that flaked purely on that
+  slowness (a health-indicator writable probe and a frontend detail query) were made resilient
+  without weakening production behavior.
 - **Task 3 — intermittent storage property-test failure (not reproduced).** While running the shared
   suite during Task 3, one run reported `storage.property.test.ts` "Property 1: Storage round-trip"
   failing on a fast-check-generated path where the same name was used as both a file and a directory
@@ -149,3 +247,25 @@ assumptions discovered, and how they were caught and corrected (Req 14.3).
   with no code change, so it did not reproduce. Flagged here as a potential edge case in the Task 1.3
   generator or `storage.ts` mkdir handling to harden later; no fix applied yet since it was not
   reproducible.
+
+## 8. HVC #12 — final honesty review of this log
+
+Read end to end on completion of Task 17 and confirmed it matches reality:
+
+- **What is verified live and passing:** the full local test suite — shared 29/29, backend 18/18,
+  processing 14/14 (including a real-FFmpeg integration pass and the Sample_Video end-to-end demo),
+  frontend 6/6 — plus HVC #1 (MP4 validation), HVC #4 (concurrent RWX mount + durability on kind),
+  and HVC #8/#9 (manifest + script review). Builds are clean across all packages and the frontend.
+- **What is NOT yet verified live (stated plainly):** HVC #3 (SQLite single-writer integrity under
+  concurrent load), HVC #6 (readiness probe under storage loss), and HVC #7 (rolling update / no
+  request loss / rollback), i.e. Tasks 14 (partial) and 15. These are blocked by the WSL2 memory
+  limit on the current machine (section 7), not by any code or manifest defect. The manifests render
+  cleanly, the images build and load into kind, and the stack applies; the cluster simply cannot stay
+  up under load with ~1.9 GB of WSL RAM. They are ready to run on a host with adequate memory using
+  the documented steps.
+- **Safety note:** the machine's default kube-context is a production AWS EKS cluster. All Kubernetes
+  work was confined to the local `kind-video-platform` context, and the `deploy.sh`/`cleanup.sh`
+  scripts print and confirm the target context before acting (and are namespace-scoped).
+
+This log is intended to be an accurate, non-inflated record: where a check passed it says so with
+the command/observation; where a check could not be completed it says so and why.
