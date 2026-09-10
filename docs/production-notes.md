@@ -9,15 +9,25 @@ durability, and operability.
 ## Scalability
 
 **Demo:** stateless frontend and backend can run with N replicas behind their Services; the worker
-is a single replica because the queue is single-writer SQLite.
+is a single replica because the queue is single-writer SQLite. The kind cluster is **single-node**
+(`deployment/kind-cluster.yaml`), so today's failover is pod-level only — a node failure takes
+everything down, and replicas can only ever land on that one node.
 
 **Production:**
+- **Multi-node cluster across availability zones.** Run a real multi-node cluster (managed node
+  pools spread over ≥2–3 AZs) so the platform tolerates node and zone failures, not just pod
+  restarts. Spread replicas with `topologySpreadConstraints` / pod anti-affinity (one backend and
+  one frontend replica per node/zone) and set PodDisruptionBudgets so rolling node upgrades never
+  drain a whole tier at once. Use separate **node pools**: a general pool for the stateless tiers
+  and a CPU/GPU-optimized pool for the transcoding workers (see Cloud deployment).
 - **Backend** scales horizontally behind a load balancer. The scaling ceiling today is the SQLite
   single-writer model — remove it by moving metadata to a managed relational DB (see Storage), after
-  which many backend replicas can write concurrently.
+  which many backend replicas can write concurrently. Drive replica count with an HPA on
+  CPU/latency.
 - **Processing** becomes horizontally scalable once the queue supports safe concurrent claims
   (a real broker or a DB with `SELECT ... FOR UPDATE SKIP LOCKED`). Run a worker pool sized to
-  transcode throughput, with an autoscaler keyed on queue depth (KEDA) rather than CPU alone.
+  transcode throughput, with an autoscaler keyed on queue depth (KEDA) rather than CPU alone, and
+  let the **cluster autoscaler** add/remove nodes in the worker pool as that pool scales.
 - **Frontend** is static assets; put them behind a CDN and scale replicas to zero relevance.
 
 ## Large uploads
