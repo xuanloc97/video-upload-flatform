@@ -85,6 +85,36 @@ pod; no node-level HA).
 - Validate/transcode in a **sandboxed** worker (FFmpeg parses untrusted input); drop the network
   from worker pods where possible.
 
+### Protecting sensitive configuration
+
+**Demo:** configuration is intentionally in the clear for a single-tenant local cluster. The
+monitoring stack ships Grafana credentials as plain env literals (`admin` / `admin` in
+`deployment/monitoring/grafana.yaml`), Prometheus has no authentication at all, and both are exposed
+through the ingress at `/grafana` and `/prometheus`. Application config (`UPLOADS_DIR`, `PORT`,
+`BACKEND_GRAPHQL_URL`, poll interval) is non-secret and lives in Deployment env / ConfigMaps. No
+Kubernetes `Secret` objects are used yet.
+
+**Production:**
+- **No secrets in manifests or images.** Move every credential (Grafana admin password, DB
+  connection strings, object-store keys, JWT signing keys, TLS private keys) out of env literals and
+  ConfigMaps into Kubernetes `Secret`s sourced from a real secret manager — External Secrets
+  Operator / Vault / cloud KMS-backed secret stores — and inject via `envFrom`/`secretKeyRef` or
+  mounted files. Never bake secrets into container images.
+- **Keep secrets out of source control.** Enforce with pre-commit secret scanning (gitleaks) and CI
+  scanning; if a secret must live in Git for GitOps, encrypt it (SOPS/sealed-secrets) rather than
+  committing plaintext. Keep `.env`, keys, and credential files in `.gitignore`.
+- **Least-privilege access to config.** Scope RBAC so only the workloads that need a secret can read
+  it (per-namespace, per-ServiceAccount); avoid cluster-wide secret read. Tighten the Prometheus
+  `ClusterRole` (currently broad read for scraping) and prefer the Prometheus Operator's scoped
+  discovery where possible.
+- **Rotation and encryption at rest.** Enable rotation for DB/object-store credentials and Grafana
+  admin, turn on etcd encryption-at-rest for `Secret`s, and short-lived, auto-rotated tokens over
+  long-lived static keys.
+- **Lock down the ops surfaces.** Put Grafana behind SSO/OIDC (disable local `admin`), require auth
+  and TLS in front of Prometheus (it exposes cluster internals), or keep both off the public ingress
+  entirely (internal-only ingress / port-forward / VPN). Redact secret values from logs and error
+  messages.
+
 ## Observability
 
 **Demo:** health endpoints (`/health/live`, `/health/ready`) and container logs.
@@ -124,3 +154,39 @@ backend at managed Postgres, replace the local ingress with a cloud ingress/LB +
 autoscaler. The application code is unchanged apart from the storage/metadata adapters, which are
 already behind the `Storage` and `MetadataStore` interfaces in `shared/` — the seams that make this
 migration a configuration-and-adapter change rather than a rewrite.
+
+### Infrastructure as Code (Terraform)
+
+**Demo:** the local cluster and its add-ons are created imperatively by shell scripts
+(`scripts/cluster-up.sh` runs `kind create cluster` and installs the ingress controller). That is
+fine for a laptop but is not reproducible, reviewable, or drift-controlled for real environments.
+
+**Production:** manage all cloud infrastructure declaratively with **Terraform**, keeping a clear
+split between *infrastructure* (Terraform) and *application* (Kustomize overlays, applied by GitOps):
+
+- **Layout.** Reusable **modules** (`network`, `cluster`, `storage`, `database`, `dns_tls`,
+  `iam`, `observability`) composed per environment. Separate the state per environment via
+  workspaces or per-env root modules (`envs/dev`, `envs/staging`, `envs/ha`) so a `dev` change can
+  never touch `prod`.
+- **Resources Terraform owns:**
+  - **Networking:** VPC, subnets, NAT, security groups.
+  - **Managed Kubernetes:** the cluster + node pools (a general pool for stateless tiers and a
+    CPU/GPU-optimized pool for the transcoding worker fan-out), with the cluster autoscaler.
+  - **Object storage** for media (S3/GCS) with lifecycle/retention policies, plus the CDN.
+  - **Managed Postgres** (RDS/Cloud SQL) for metadata, replacing SQLite-over-NFS — or a managed RWX
+    filesystem (EFS/Filestore) if the POSIX path is kept.
+  - **DNS + TLS certificates** (Route53/Cloud DNS + ACM/managed certs) and the ingress/LB.
+  - **IAM / workload identity** (IRSA / GKE Workload Identity) so pods get scoped, keyless access to
+    buckets and the database.
+  - **Secrets** provisioned into a secret manager (see “Protecting sensitive configuration”), never
+    hard-coded in `.tf` or committed state.
+- **State & safety:** a **remote backend** with locking (S3 + DynamoDB / GCS) and encryption at
+  rest; run `terraform plan` on PRs and `apply` only through CI on merge; enable **drift detection**
+  and require plan review for production. Pin provider and module versions.
+- **Boundary with the app:** Terraform stops at the cluster and its managed dependencies; it can
+  bootstrap the GitOps controller (Argo CD/Flux), which then reconciles the same Kustomize overlays
+  used locally. This keeps `scripts/*.sh` as the local-dev path and Terraform + GitOps as the
+  cloud path, without duplicating application manifests.
+
+A future `deployment/terraform/` (or a dedicated infra repo) would hold these modules and per-env
+roots, mirroring how `deployment/overlays/` already separates `dev` from `ha` for the app layer.
