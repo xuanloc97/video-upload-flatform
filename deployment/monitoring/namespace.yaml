@@ -1,0 +1,10 @@
+# Dedicated namespace for the monitoring stack (Prometheus + Grafana), kept separate from the
+# `video-platform` app namespace so it can be deployed/torn down independently and never interferes
+# with the app's failover/cleanup flows.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/part-of: video-upload-platform
+    app.kubernetes.io/component: monitoring

@@ -1,11 +1,5 @@
 # AI Usage Log
 
-> **Living document.** This log is appended to continuously as the build progresses — not written
-> once at the end. Every Human Verification Checkpoint (HVC #1–#12 in the design) feeds its result
-> back into this file ("closing the loop"): when a check passes we record the command/observation and
-> a human sign-off; when a check catches an AI mistake we record what was wrong, how it was found, and
-> how it was fixed. Satisfies Requirement 14 (AI Usage Documentation) and assessment section 8.
-
 ## 1. AI tools used
 
 | Tool / model | Where used |

@@ -26,8 +26,8 @@ See [`docs/architecture.md`](docs/architecture.md) for the design and trade-offs
 /backend       # NestJS GraphQL service      — npm workspace
 /processing    # FFmpeg worker               — npm workspace
 /shared        # Shared types + Storage/MetadataStore abstractions — npm workspace
-/deployment    # Kustomize base + overlays (dev, ha), NFS, ingress, kind config
-/scripts       # cluster-up.sh, build.sh, deploy.sh, test.sh, cleanup.sh, generate-sample.sh
+/deployment    # Kustomize base + overlays (dev, ha), NFS, ingress, kind config; monitoring/ (Prometheus + Grafana)
+/scripts       # cluster-up.sh, build.sh, deploy.sh, test.sh, cleanup.sh, generate-sample.sh, monitoring-up.sh
 /docs          # architecture.md, production-notes.md, failover-test.md, ai-usage-log.md
 /samples       # sample-video.mp4 (the Sample_Video)
 ```
@@ -160,6 +160,55 @@ See [`docs/failover-test.md`](docs/failover-test.md) for the multi-replica failo
 rolling-update procedures (terminate a backend/frontend replica and confirm the tier keeps serving;
 delete/recreate a backend pod and confirm previously uploaded files survive; run a rollout with a
 request loop and confirm zero failed requests, then `kubectl rollout undo`).
+
+## Monitoring (Prometheus + Grafana)
+
+An optional monitoring stack lives in [`deployment/monitoring`](deployment/monitoring) and deploys
+into its own `monitoring` namespace, independent of the app overlays. Prometheus scrapes the kubelet
+cAdvisor endpoint (per-pod CPU / memory / network for the whole cluster, including the
+`video-platform` pods), and Grafana comes up with the Prometheus datasource and a **Video Upload
+Platform** dashboard already provisioned.
+
+### Deploy
+
+```bash
+bash scripts/monitoring-up.sh          # applies deployment/monitoring, waits for rollout
+# or directly:
+kubectl apply -k deployment/monitoring
+```
+
+Upstream images (`prom/prometheus`, `grafana/grafana`) are pulled by the kind node, so no
+`build.sh`/`kind load` step is needed.
+
+### Access
+
+Both sit behind the same ingress as the app (more specific paths win over the app's `/` rule):
+
+```
+http://localhost/grafana       # login: admin / admin (demo only) — dashboard is pre-loaded
+http://localhost/prometheus    # raw Prometheus UI / target status
+```
+
+**Fallback (no ingress):**
+
+```bash
+kubectl -n monitoring port-forward svc/grafana    3001:3000    # http://localhost:3001/grafana
+kubectl -n monitoring port-forward svc/prometheus 9090:9090    # http://localhost:9090/prometheus
+```
+
+In Grafana, open **Dashboards → Video Upload Platform** for live CPU, memory, and network per pod.
+Confirm Prometheus is scraping with **Status → Targets** (the `kubernetes-cadvisor` target should be
+`up`).
+
+> **Security:** this is a local-demo setup — Grafana uses default `admin`/`admin` credentials, the
+> TSDB is a non-durable `emptyDir` (history resets on pod restart), and there is no TLS. See
+> [`docs/production-notes.md`](docs/production-notes.md) for how this hardens at production scale.
+
+### Tear down
+
+```bash
+kubectl delete -k deployment/monitoring
+```
 
 ## Troubleshooting
 

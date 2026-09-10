@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Monitoring stack (Prometheus + Grafana). Deployed independently of the app overlays:
+#   kubectl apply -k deployment/monitoring
+# The `monitoring` namespace is created by namespace.yaml (this kustomization does not force a
+# namespace on cluster-scoped RBAC resources).
+resources:
+  - namespace.yaml
+  - prometheus-rbac.yaml
+  - prometheus-config.yaml
+  - prometheus.yaml
+  - grafana-provisioning.yaml
+  - grafana.yaml
+  - ingress.yaml

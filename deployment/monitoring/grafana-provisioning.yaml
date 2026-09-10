@@ -1,0 +1,165 @@
+# Grafana provisioning: preconfigured Prometheus datasource + a dashboard provider, plus the
+# dashboard JSON itself. All mounted read-only into the Grafana container so the stack comes up
+# fully configured with no manual clicking.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: monitoring
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        # In-cluster Service URL. Prometheus serves its API under the /prometheus route prefix.
+        url: http://prometheus.monitoring.svc.cluster.local:9090/prometheus
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: monitoring
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: video-platform
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: true
+        editable: false
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-video-platform
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/component: monitoring
+data:
+  video-platform.json: |
+    {
+      "annotations": { "list": [] },
+      "editable": false,
+      "graphTooltip": 0,
+      "time": { "from": "now-30m", "to": "now" },
+      "refresh": "10s",
+      "title": "Video Upload Platform",
+      "uid": "video-platform",
+      "schemaVersion": 39,
+      "templating": {
+        "list": [
+          {
+            "name": "namespace",
+            "type": "constant",
+            "query": "video-platform",
+            "current": { "text": "video-platform", "value": "video-platform" },
+            "hide": 2
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Running containers",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "fieldConfig": { "defaults": { "color": { "mode": "thresholds" } }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "count(count by (pod) (container_last_seen{namespace=\"$namespace\", pod!=\"\"}))"
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Total memory (working set)",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", pod!=\"\", container!=\"\"})"
+            }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Total CPU (cores)",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "fieldConfig": { "defaults": { "unit": "none", "decimals": 3 }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", pod!=\"\", container!=\"\"}[5m]))"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "CPU usage by pod (cores)",
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 4 },
+          "fieldConfig": { "defaults": { "unit": "none", "decimals": 3 }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "{{pod}}",
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", pod!=\"\", container!=\"\"}[5m]))"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Memory working set by pod",
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 4 },
+          "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "{{pod}}",
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"$namespace\", pod!=\"\", container!=\"\"})"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Network received by pod (bytes/s)",
+          "gridPos": { "h": 9, "w": 12, "x": 0, "y": 13 },
+          "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "{{pod}}",
+              "expr": "sum by (pod) (rate(container_network_receive_bytes_total{namespace=\"$namespace\", pod!=\"\"}[5m]))"
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Network transmitted by pod (bytes/s)",
+          "gridPos": { "h": 9, "w": 12, "x": 12, "y": 13 },
+          "fieldConfig": { "defaults": { "unit": "Bps" }, "overrides": [] },
+          "targets": [
+            {
+              "refId": "A",
+              "legendFormat": "{{pod}}",
+              "expr": "sum by (pod) (rate(container_network_transmit_bytes_total{namespace=\"$namespace\", pod!=\"\"}[5m]))"
+            }
+          ]
+        }
+      ]
+    }
