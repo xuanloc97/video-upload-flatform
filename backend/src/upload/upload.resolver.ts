@@ -8,8 +8,10 @@ import { MetadataStore, ProcessingStatus, UploadRecord } from '@video-platform/s
 import { METADATA_STORE } from '../storage.tokens';
 import { InvalidMp4Error } from '../mp4-validation';
 import { IncomingUpload, UploadService } from './upload.service';
+import { VideoQueryService } from './video-query.service';
 import {
   ProcessingResultInput,
+  RenditionModel,
   UploadRecordModel,
   VideoMetadataModel,
 } from '../graphql/models';
@@ -34,6 +36,7 @@ function toModel(record: UploadRecord): UploadRecordModel {
 export class UploadResolver {
   constructor(
     private readonly uploadService: UploadService,
+    private readonly videoQuery: VideoQueryService,
     @Inject(METADATA_STORE) private readonly metadata: MetadataStore,
   ) {}
 
@@ -59,35 +62,38 @@ export class UploadResolver {
     }
   }
 
-  @Query(() => [UploadRecordModel], { description: 'List every Upload_Record (Task 5).' })
+  @Query(() => [UploadRecordModel], {
+    description: 'List every Upload_Record with id, filename, upload time, and status (Req 3.1, 3.2).',
+  })
   videos(): UploadRecordModel[] {
-    return this.metadata.listUploads().map(toModel);
+    return this.videoQuery.listVideos().map(toModel);
   }
 
   @Query(() => ProcessingStatus, {
-    description: 'Current status for an upload id (fully implemented in Task 5).',
+    description: 'Current Processing_Status for an upload id; errors for an unknown id (Req 3.3-3.5).',
   })
   videoStatus(@Args('id', { type: () => ID }) id: string): ProcessingStatus {
-    const record = this.metadata.getUpload(id);
-    if (!record) {
-      throw new GraphQLError(`No Upload_Record found for id: ${id}`, {
-        extensions: { code: 'NOT_FOUND' },
-      });
-    }
-    return record.status;
+    return this.videoQuery.getStatus(id);
   }
 
   @Query(() => VideoMetadataModel, {
-    description: 'Video metadata (renditions/thumbnail); fully implemented in Task 5.',
+    description:
+      'Rendition + thumbnail references when COMPLETED; otherwise just the current status (Req 4.1, 4.2, 4.5).',
   })
   videoMetadata(@Args('id', { type: () => ID }) id: string): VideoMetadataModel {
-    const record = this.metadata.getUpload(id);
-    if (!record) {
-      throw new GraphQLError(`No Upload_Record found for id: ${id}`, {
-        extensions: { code: 'NOT_FOUND' },
-      });
-    }
-    return { id: record.id, status: record.status, renditions: [], thumbnailUrl: null };
+    const metadata = this.videoQuery.getMetadata(id);
+    const renditions: RenditionModel[] = metadata.renditions.map((r) => ({
+      label: r.label,
+      url: r.url,
+      width: r.width,
+      height: r.height,
+    }));
+    return {
+      id: metadata.id,
+      status: metadata.status,
+      renditions,
+      thumbnailUrl: metadata.thumbnailUrl,
+    };
   }
 
   @Mutation(() => UploadRecordModel, {

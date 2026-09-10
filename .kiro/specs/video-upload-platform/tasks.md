@@ -86,7 +86,7 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - _Requirements: 2.4, 2.5_
 
 - [ ] 5. Implement backend listing, status, metadata, and file-serving APIs
-  - [ ] 5.1 Implement `videos` and `videoStatus` queries
+  - [-] 5.1 Implement `videos` and `videoStatus` queries
     - Return every Upload_Record with id, original filename, upload timestamp, and status; return current status for a valid id and a descriptive error for an unknown id
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 

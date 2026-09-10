@@ -25,7 +25,12 @@ What AI was used for, per component. Filled in as each component is built.
 - **Backend (NestJS GraphQL: upload, list, status, metadata, health):** AI scaffolded the NestJS +
   Apollo (code-first) app, the GraphQL schema (upload/list/status/metadata/processing mutations),
   the streaming `uploadVideo` path (graphql-upload-minimal → disk, no memory buffering), the
-  injectable MP4 validation (ftyp magic bytes + ffprobe probe), and the property/unit tests.
+  injectable MP4 validation (ftyp magic bytes + ffprobe probe), and the property/unit tests. AI also
+  built the read-side query layer (`videos`/`videoStatus`/`videoMetadata` via a `VideoQueryService`
+  that withholds rendition/thumbnail refs until `COMPLETED`) and the REST-style `/files` route that
+  streams renditions/thumbnails from `/uploads` with correct content types and HTTP Range/206
+  support, reusing the shared Storage path-traversal guard. Verified with Properties 5–10 plus
+  file-route range unit tests.
 - **Processing (FFmpeg worker: renditions, thumbnail, recovery/retry):** _TBD_
 - **Frontend (React SPA: upload, listing, status, playback):** _TBD_
 - **Kubernetes (Kustomize base/overlays, NFS, ingress, scripts):** _TBD_
