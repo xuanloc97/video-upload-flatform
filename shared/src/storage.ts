@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { promises as fs, createReadStream, type ReadStream } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
@@ -28,6 +28,26 @@ export interface Storage {
    * visible at their final path.
    */
   move(fromRelativePath: string, toRelativePath: string): Promise<void>;
+
+  /**
+   * Resolve `relativePath` to an absolute path inside the base directory, throwing if it would
+   * escape the base dir (path-traversal guard). Exposed so callers that need a real filesystem
+   * path (e.g. the backend file-serving route) reuse the same traversal protection.
+   */
+  resolvePath(relativePath: string): string;
+
+  /**
+   * Return `fs.Stats` for `relativePath` (used to obtain the file size for ranged reads). Rejects
+   * if the path escapes the base dir or the file does not exist.
+   */
+  stat(relativePath: string): Promise<import('fs').Stats>;
+
+  /**
+   * Open a readable stream over `relativePath`. When `range` is provided, only the inclusive byte
+   * range `[start, end]` is streamed (used to serve HTTP Range requests / 206 Partial Content).
+   * Rejects if the path escapes the base dir.
+   */
+  createReadStream(relativePath: string, range?: { start: number; end: number }): ReadStream;
 }
 
 /**
@@ -42,7 +62,7 @@ export class FileSystemStorage implements Storage {
   }
 
   /** Resolve a relative path against the base dir, guarding against path traversal. */
-  private resolve(relativePath: string): string {
+  resolvePath(relativePath: string): string {
     const target = path.resolve(this.baseDir, relativePath);
     const rel = path.relative(this.baseDir, target);
     if (rel.startsWith('..') || path.isAbsolute(rel)) {
@@ -52,18 +72,18 @@ export class FileSystemStorage implements Storage {
   }
 
   async write(relativePath: string, content: Buffer | string): Promise<void> {
-    const target = this.resolve(relativePath);
+    const target = this.resolvePath(relativePath);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, content);
   }
 
   async read(relativePath: string): Promise<Buffer> {
-    return fs.readFile(this.resolve(relativePath));
+    return fs.readFile(this.resolvePath(relativePath));
   }
 
   async exists(relativePath: string): Promise<boolean> {
     try {
-      await fs.access(this.resolve(relativePath));
+      await fs.access(this.resolvePath(relativePath));
       return true;
     } catch {
       return false;
@@ -71,10 +91,21 @@ export class FileSystemStorage implements Storage {
   }
 
   async move(fromRelativePath: string, toRelativePath: string): Promise<void> {
-    const from = this.resolve(fromRelativePath);
-    const to = this.resolve(toRelativePath);
+    const from = this.resolvePath(fromRelativePath);
+    const to = this.resolvePath(toRelativePath);
     await fs.mkdir(path.dirname(to), { recursive: true });
     await fs.rename(from, to);
+  }
+
+  async stat(relativePath: string): Promise<import('fs').Stats> {
+    return fs.stat(this.resolvePath(relativePath));
+  }
+
+  createReadStream(relativePath: string, range?: { start: number; end: number }): ReadStream {
+    const target = this.resolvePath(relativePath);
+    return range
+      ? createReadStream(target, { start: range.start, end: range.end })
+      : createReadStream(target);
   }
 }
 

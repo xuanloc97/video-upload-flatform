@@ -17,6 +17,8 @@ import { HealthController } from './health/health.controller';
 import { UploadsHealthIndicator } from './health/uploads.health';
 import { UploadResolver } from './upload/upload.resolver';
 import { UploadService } from './upload/upload.service';
+import { VideoQueryService } from './upload/video-query.service';
+import { FilesController } from './files/files.controller';
 
 /** Default base directory for the shared `/uploads` volume when `UPLOADS_DIR` is unset. */
 export const DEFAULT_UPLOADS_DIR = '/uploads';
@@ -77,9 +79,11 @@ export class AppModule {
           useFactory: () => overrides.mp4Probe ?? new FfprobeMp4Probe(),
         },
         UploadService,
+        VideoQueryService,
         UploadResolver,
         UploadsHealthIndicator,
       ],
+      controllers: [FilesController],
     };
   }
 }
