@@ -127,11 +127,20 @@ Kubernetes `Secret` objects are used yet.
 
 ## Observability
 
-**Demo:** health endpoints (`/health/live`, `/health/ready`) and container logs.
+**Demo:** health endpoints (`/health/live`, `/health/ready`), container logs, and an optional
+Prometheus + Grafana stack (`deployment/monitoring`) that scrapes cAdvisor and ships a provisioned
+**Video Upload Platform** dashboard (per-pod CPU / memory / network). See the README's Monitoring
+section.
 
 **Production:**
 - **Metrics** (Prometheus): request rate/latency/errors, queue depth, job duration, failure rate,
   storage usage. Autoscale workers on queue depth.
+- **Dashboards** (Grafana): build on the demo dashboard with the SLIs that matter operationally —
+  upload success rate and p50/p95/p99 latency, transcode throughput and job duration by rendition,
+  queue depth and worker saturation, `PENDING`/`PROCESSING`/`FAILED` counts, and storage usage.
+  Provision dashboards as code (ConfigMap / the Grafana Operator, as already done here) so they are
+  version-controlled and reproducible, one row per tier (API, worker, storage) plus a top-level
+  service-health overview. Wire panels to alerts so a red panel corresponds to a firing rule.
 - **Structured logs** shipped to a central store, correlated by upload id.
 - **Distributed tracing** (OpenTelemetry) across upload → claim → transcode → complete.
 - **Alerts** on readiness failures, growing `FAILED`/dead-letter counts, and storage pressure.
@@ -143,6 +152,19 @@ Kubernetes `Secret` objects are used yet.
 - Transcoding dominates compute cost — use spot/preemptible workers for the fan-out pool, hardware
   encoders, and only produce renditions that are actually requested (or generate on-demand/ABR).
 - Scale stateless tiers to demand; the frontend can be pure CDN with near-zero compute.
+- **Use the latest-generation EC2 instance classes** for the node pools — they give the best
+  price/performance per vCPU. Prefer **Graviton (ARM64)** families (e.g. `m7g`/`c7g`/`r7g`, or the
+  newer `*8g`) for the stateless API/frontend tiers, `c7g`/`c7i` compute-optimized instances for the
+  transcoding fan-out (or `g5`/`g6` GPU instances when using NVENC hardware encoding), and size with
+  the cluster autoscaler so newer, cheaper generations are adopted as they ship. (Building
+  multi-arch images already fits the ARM64 move.)
+- **Commit the steady-state baseline with a Reserved Instance / Savings Plan.** Cover the always-on
+  floor (the minimum backend/frontend replicas, monitoring, managed Postgres) with 1- or 3-year
+  Compute Savings Plans or Reserved Instances for the biggest discount, and leave the elastic,
+  bursty transcoding fan-out on **On-Demand + Spot**. Right-size the reservation to measured
+  baseline utilization (not peak) and review coverage/utilization regularly so commitments track
+  real usage. Apply the same commit-baseline / burst-on-demand split to RDS (Reserved DB instances)
+  and to any reserved capacity for object storage/CDN egress.
 
 ## CI/CD
 
