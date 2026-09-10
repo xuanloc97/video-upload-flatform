@@ -1,5 +1,5 @@
-import { FTYP_HEADER_BYTES, hasFtypMagic } from './mp4-validation';
-import { parseFfprobeJson } from './ffprobe-mp4-probe';
+import { FTYP_HEADER_BYTES, hasFtypMagic } from '../src/mp4-validation';
+import { parseFfprobeJson } from '../src/ffprobe-mp4-probe';
 import { makeFtypBuffer } from './upload/upload.test-helpers';
 
 /**

@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
-import { BackendClient, ClaimedJob, ProcessingResult } from './backend-client';
-import { Transcoder } from './ffmpeg';
-import { PlannedRendition } from './rendition-plan';
+import { BackendClient, ClaimedJob, ProcessingResult } from '../src/backend-client';
+import { Transcoder } from '../src/ffmpeg';
+import { PlannedRendition } from '../src/rendition-plan';
 
 /**
  * Test doubles for exercising {@link ProcessingWorker} without FFmpeg or a live backend. Kept out of

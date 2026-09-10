@@ -3,8 +3,8 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MockedProvider, MockedResponse } from '@apollo/client/testing';
 import { GraphQLError } from 'graphql';
-import { UploadForm } from './UploadForm';
-import { LIST_VIDEOS, UPLOAD_VIDEO } from './graphql';
+import { UploadForm } from '../src/UploadForm';
+import { LIST_VIDEOS, UPLOAD_VIDEO } from '../src/graphql';
 
 /*
  * Component tests for the upload view (Reqs 8.1–8.4): the file-select control, GraphQL upload

@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MockedProvider, MockedResponse } from '@apollo/client/testing';
-import { VideoList } from './VideoList';
-import { LIST_VIDEOS, VIDEO_METADATA } from './graphql';
+import { VideoList } from '../src/VideoList';
+import { LIST_VIDEOS, VIDEO_METADATA } from '../src/graphql';
 
 /*
  * Component tests for the list/status view (Reqs 9.1–9.4): row rendering with status badges, and —

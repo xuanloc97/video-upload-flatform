@@ -1,6 +1,6 @@
 import { Readable } from 'stream';
-import { Mp4Probe, Mp4ProbeResult } from '../mp4-validation';
-import { IncomingUpload } from './upload.service';
+import { Mp4Probe, Mp4ProbeResult } from '../../src/mp4-validation';
+import { IncomingUpload } from '../../src/upload/upload.service';
 
 /**
  * Test helpers for exercising {@link UploadService} directly (no HTTP / GraphQL server), backed by
@@ -59,12 +59,12 @@ export class StubInvalidProbe implements Mp4Probe {
 export function makeResolver(
   storage: import('@video-platform/shared').Storage,
   metadata: import('@video-platform/shared').MetadataStore,
-): import('./upload.resolver').UploadResolver {
+): import('../../src/upload/upload.resolver').UploadResolver {
   // Lazy require to avoid a load-time cycle (resolver -> service -> helpers in some orderings).
 
-  const { UploadService } = require('./upload.service') as typeof import('./upload.service');
+  const { UploadService } = require('../../src/upload/upload.service') as typeof import('../../src/upload/upload.service');
 
-  const { UploadResolver } = require('./upload.resolver') as typeof import('./upload.resolver');
+  const { UploadResolver } = require('../../src/upload/upload.resolver') as typeof import('../../src/upload/upload.resolver');
   const service = new UploadService(storage, metadata, new StubValidProbe());
   return new UploadResolver(service, metadata);
 }

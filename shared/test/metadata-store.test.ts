@@ -3,8 +3,8 @@ import {
   isSqliteBusyError,
   runWithBusyRetry,
   TempSqliteMetadataStore,
-} from './metadata-store';
-import { ProcessingStatus } from './types';
+} from '../src/metadata-store';
+import { ProcessingStatus } from '../src/types';
 
 /** Build an Error carrying a better-sqlite3-style `code`, e.g. 'SQLITE_BUSY'. */
 function sqliteError(code: string, message = code): Error & { code: string } {

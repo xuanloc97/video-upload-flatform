@@ -1,5 +1,5 @@
 import * as fc from 'fast-check';
-import { planRenditions, RENDITION_LADDER } from './rendition-plan';
+import { planRenditions, RENDITION_LADDER } from '../src/rendition-plan';
 
 /*
  * Unit + property tests for the downscale-only rendition planner (Req 6.2, 6.3). These are pure and

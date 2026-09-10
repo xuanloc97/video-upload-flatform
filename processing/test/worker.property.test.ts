@@ -2,15 +2,15 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import * as fc from 'fast-check';
 import { ProcessingStatus, TempDirStorage } from '@video-platform/shared';
-import { ClaimedJob } from './backend-client';
-import { planRenditions } from './rendition-plan';
+import { ClaimedJob } from '../src/backend-client';
+import { planRenditions } from '../src/rendition-plan';
 import {
   ProcessingWorker,
   ORIGINALS_DIR,
   RENDITIONS_DIR,
   THUMBNAILS_DIR,
   TMP_DIR,
-} from './worker';
+} from '../src/worker';
 import { StubBackendClient, StubTranscoder } from './worker.test-helpers';
 
 /*

@@ -5,9 +5,9 @@ import { Test } from '@nestjs/testing';
 import * as fc from 'fast-check';
 import { TerminusModule } from '@nestjs/terminus';
 import { Storage, TempDirStorage } from '@video-platform/shared';
-import { STORAGE } from '../storage.tokens';
-import { HealthController } from './health.controller';
-import { UPLOADS_HEALTH_KEY, UploadsHealthIndicator } from './uploads.health';
+import { STORAGE } from '../../src/storage.tokens';
+import { HealthController } from '../../src/health/health.controller';
+import { UPLOADS_HEALTH_KEY, UploadsHealthIndicator } from '../../src/health/uploads.health';
 
 /*
  * Tests for the backend health checks (design "Health").

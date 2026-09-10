@@ -23,7 +23,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    include: ['test/**/*.{test,spec}.{ts,tsx}'],
+    setupFiles: ['./test/setup.ts'],
     // Give async findBy* queries (which await Apollo query resolution) generous headroom so tests
     // are not flaky under load or on slower filesystems.
     testTimeout: 30000,

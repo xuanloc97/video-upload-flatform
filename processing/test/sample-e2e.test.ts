@@ -7,10 +7,10 @@ import {
   TempDirStorage,
   TempSqliteMetadataStore,
 } from '@video-platform/shared';
-import { FfmpegTranscoder } from './ffmpeg';
-import { MetadataStoreBackendClient } from './metadata-backend-client';
-import { planRenditions } from './rendition-plan';
-import { ProcessingWorker, ORIGINALS_DIR, RENDITIONS_DIR, THUMBNAILS_DIR } from './worker';
+import { FfmpegTranscoder } from '../src/ffmpeg';
+import { MetadataStoreBackendClient } from '../src/metadata-backend-client';
+import { planRenditions } from '../src/rendition-plan';
+import { ProcessingWorker, ORIGINALS_DIR, RENDITIONS_DIR, THUMBNAILS_DIR } from '../src/worker';
 
 const execFileAsync = promisify(execFile);
 

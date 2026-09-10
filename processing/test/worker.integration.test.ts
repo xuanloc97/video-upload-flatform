@@ -3,9 +3,9 @@ import { promisify } from 'util';
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { ProcessingStatus, TempDirStorage } from '@video-platform/shared';
-import { FfmpegTranscoder } from './ffmpeg';
-import { planRenditions } from './rendition-plan';
-import { ProcessingWorker, ORIGINALS_DIR, RENDITIONS_DIR, THUMBNAILS_DIR } from './worker';
+import { FfmpegTranscoder } from '../src/ffmpeg';
+import { planRenditions } from '../src/rendition-plan';
+import { ProcessingWorker, ORIGINALS_DIR, RENDITIONS_DIR, THUMBNAILS_DIR } from '../src/worker';
 import { StubBackendClient } from './worker.test-helpers';
 
 const execFileAsync = promisify(execFile);

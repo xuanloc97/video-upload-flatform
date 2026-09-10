@@ -4,9 +4,9 @@ import {
   TempDirStorage,
   TempSqliteMetadataStore,
 } from '@video-platform/shared';
-import { fileRouteUrl } from '../files/file-route';
+import { fileRouteUrl } from '../../src/files/file-route';
 import { makeResolver } from './upload.test-helpers';
-import { UploadResolver } from './upload.resolver';
+import { UploadResolver } from '../../src/upload/upload.resolver';
 
 /*
  * Unit tests confirming the existence and shape of the query/mutation resolvers wired in Tasks 4–5

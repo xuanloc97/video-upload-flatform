@@ -1,4 +1,4 @@
-import { TempDirStorage } from './storage';
+import { TempDirStorage } from '../src/storage';
 
 describe('FileSystemStorage / TempDirStorage', () => {
   let storage: TempDirStorage;

@@ -409,3 +409,22 @@ Read end to end on completion of Task 17 and confirmed it matches reality:
 
 This log is intended to be an accurate, non-inflated record: where a check passed it says so with
 the command/observation; where a check could not be completed it says so and why.
+
+## 9. Post-spec maintenance
+
+- **Test layout refactor — tests moved from `src/` to a per-package `test/` tree.** At the reviewer's
+  request the co-located `*.test.ts(x)` files (and the test-only `*.test-helpers.ts`) were relocated
+  out of each package's `src/` into a dedicated `test/` directory mirroring `src/`
+  (`shared/test`, `backend/test/{files,health,upload}`, `processing/test`, `frontend/test`). Config
+  changes: each Node package gained a `tsconfig.test.json` (extends the package tsconfig, `rootDir: "."`,
+  `noEmit`, includes `src` + `test`) that `ts-jest` uses, and its `jest.config.js` now sets
+  `roots: ['<rootDir>/test']`; the production `tsconfig.json` `include` was reverted to `src/**/*.ts`
+  so `tsc --build` still emits only application code. The frontend's `vite.config.ts` points
+  `test.include`/`setupFiles` at `test/`, and its `tsconfig.json` includes both `src` and `test`.
+  Fixes the automated file-move missed (recorded honestly): dynamic `require('./upload.service')`
+  strings in the backend upload helper, the processing helper's own source imports and two tests'
+  helper import, and the frontend `.tsx` relative imports — all corrected by hand. Stray compiled
+  `.js/.d.ts` artifacts that briefly landed in `shared/test` during a first build (when the move tool
+  had auto-added test files to the production `tsconfig` `include`) were deleted, and the `include`
+  was corrected so they do not regenerate. Verified via `scripts/test.sh`: shared 29, backend 40,
+  processing 14, frontend 6 — all green, builds clean, no test files remain under any `src/`.

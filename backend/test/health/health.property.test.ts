@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fc from 'fast-check';
 import { HealthCheckError } from '@nestjs/terminus';
 import { Storage, TempDirStorage } from '@video-platform/shared';
-import { UploadsHealthIndicator } from './uploads.health';
+import { UploadsHealthIndicator } from '../../src/health/uploads.health';
 
 /*
  * Property test for the backend readiness health check against the shared `/uploads` volume.

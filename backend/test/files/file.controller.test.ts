@@ -3,8 +3,8 @@ import { NotFoundException } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import * as fc from 'fast-check';
 import { TempDirStorage } from '@video-platform/shared';
-import { FileController } from './file.controller';
-import { fileRouteUrl } from './file-route';
+import { FileController } from '../../src/files/file.controller';
+import { fileRouteUrl } from '../../src/files/file-route';
 
 /*
  * Unit + property tests for the REST-style file-serving controller (Task 5.2 / 5.7 / 5.9).

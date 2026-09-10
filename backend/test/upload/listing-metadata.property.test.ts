@@ -9,7 +9,7 @@ import {
   TempSqliteMetadataStore,
   UploadRecord,
 } from '@video-platform/shared';
-import { fileRouteUrl } from '../files/file-route';
+import { fileRouteUrl } from '../../src/files/file-route';
 import { makeResolver } from './upload.test-helpers';
 
 /*

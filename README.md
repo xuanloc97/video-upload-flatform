@@ -32,6 +32,11 @@ See [`docs/architecture.md`](docs/architecture.md) for the design and trade-offs
 /samples       # sample-video.mp4 (the Sample_Video)
 ```
 
+Each code package keeps implementation and tests separate: source lives under `<package>/src/` and
+tests under `<package>/test/`, with the `test/` tree mirroring `src/`. The Node packages
+(`shared`, `backend`, `processing`) type-check tests via a `tsconfig.test.json` so the production
+`tsc --build` only compiles `src/`; the frontend runs its tests with Vitest from `frontend/test/`.
+
 ## Prerequisites
 
 - **Docker** (running)

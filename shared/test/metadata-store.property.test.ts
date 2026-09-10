@@ -1,6 +1,6 @@
 import * as fc from 'fast-check';
-import { TempSqliteMetadataStore } from './metadata-store';
-import { ProcessingStatus } from './types';
+import { TempSqliteMetadataStore } from '../src/metadata-store';
+import { ProcessingStatus } from '../src/types';
 
 /*
  * Property tests for the DB-backed job queue behavior of SqliteMetadataStore: atomic claim
