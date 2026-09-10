@@ -233,6 +233,80 @@ result lands here.
     (~6 ms). Confirms Req 5.2 and 5.3. Human sign-off recorded. **CAUTION preserved:** all work
     stayed on the `kind-video-platform` context; the deploy script printed and confirmed the target
     context before applying.
+- **Task 15 — HA & failover, incl. HVC #7 (rolling update / rollback). PASSED.** Ran against the
+  live `ha` deployment (backend ×2, frontend ×2) with the Sample_Video already processed
+  (720p + 480p + thumbnail, 29 263-byte thumbnail). An in-cluster load generator drove the backend
+  Service (`POST /graphql { videos { id } }`, ~110 req/s) and logged an `ok`/`fail` tally while each
+  event ran; full procedure and commands are in `docs/failover-test.md` (Req 13.3). Results:
+  * **Backend replica loss:** deleting one backend pod caused **0 failed requests** (~1 800 during
+    the window) — the surviving replica served and the pod was recreated (Req 11.3, 12.1).
+  * **Frontend replica loss:** deleting one frontend pod — in-cluster `GET frontend:80` returned
+    **ok=40 / fail=0** during replacement (Req 11.4).
+  * **File durability:** recycling **both** backend pods left `renditions/<id>/{720p,480p}.mp4`,
+    `thumbnails/<id>.jpg`, and the `COMPLETED` metadata intact; the thumbnail re-fetched over
+    `/files` was byte-identical (29 263 bytes) — data lives on the shared NFS PV (Req 12.2, 12.3).
+  * **HVC #7 rolling update:** `kubectl set env deploy/backend ROLLOUT_TEST=v2` triggered a new
+    revision; with `maxUnavailable: 0` / `maxSurge: 1` the failure count did **not** increase during
+    the rollout — zero request loss (Req 12.4).
+  * **HVC #7 rollback:** `kubectl rollout undo deploy/backend` restored the previous revision (env
+    reverted), again with **zero** new failures, and the backend kept serving (Req 12.5).
+  * Over the whole run: **31 313 OK / 5 failed** requests. All 5 failures were a single sub-second
+    `ECONNRESET` burst caused by intentionally deleting **both** backend pods at once (a harsher
+    stress than failover); single-replica loss and the managed rollout/rollback had zero loss. This,
+    and production hardening (PodDisruptionBudget, graceful drain, multi-node spread, durable shared
+    storage), is documented honestly in `docs/failover-test.md`. Human sign-off recorded.
+- **Task 18 — HVC #11 (clean-environment reproducibility via the Access_Endpoint). PASSED.** Starting
+  from a fully clean state (`kind delete cluster --name video-platform`, no leftover node container),
+  the README was followed exactly with no manual fix-ups:
+  1. `bash scripts/cluster-up.sh` — created a fresh `video-platform` kind cluster (ingress-ready host
+     ports 80/443 from `deployment/kind-cluster.yaml`) and installed the NGINX ingress controller;
+     it reached Ready.
+  2. `bash scripts/build.sh video-platform` — built and `kind load`ed all three images.
+  3. `CONFIRM=yes bash scripts/deploy.sh ha` — rolled out backend ×2, frontend ×2, processing ×1,
+     all Ready.
+  Verification through the **ingress Access_Endpoint `http://localhost/`** (not a port-forward):
+  frontend `GET /` → 200, `GET /health/ready` → 200 (`uploads up`), `POST /graphql { videos }` → 200
+  (empty on the clean cluster). Uploaded `samples/sample-video.mp4` via the ingress `/graphql`
+  multipart endpoint (id `de48d797-1e4b-4989-81df-3efe3497c71c`) and polled `videoStatus`
+  PENDING → PROCESSING → COMPLETED. `videoMetadata` returned 720p (1280×720) + 480p (852×480) and a
+  thumbnail; fetched over `/files`: thumbnail HTTP 200, 29 263 bytes, `image/jpeg`; 720p HTTP 200,
+  72 195 bytes, `video/mp4`; 480p HTTP 200, 56 724 bytes, `video/mp4`; and a `Range: bytes=0-1023`
+  request returned HTTP 206 (playback seek). Confirms Req 10.7, 13.1, 15.1, 15.2. Human sign-off
+  recorded. Note: the earlier session's cluster (created before `kind-cluster.yaml` existed) lacked
+  the host 80/443 port mappings, which is why the ingress Access_Endpoint only bound host port 80
+  after this clean recreate; a fresh `cluster-up.sh` is the documented path and works end to end.
+- **Task 8.9 — HVC #2 (FFmpeg rendition correctness). PASSED.** Ran the real `FfmpegTranscoder` +
+  `ProcessingWorker` (compiled `dist`) against generated sources on the host (ffmpeg/ffprobe 9.0.1),
+  then inspected the outputs with `ffprobe -show_entries stream=width,height`:
+  * 4K source (3840×2160) → the full downscale-only ladder, ffprobe-confirmed: **2K 2560×1440,
+    1080p 1920×1080, 720p 1280×720, 480p 852×480** — all even dimensions, 16:9 aspect preserved.
+  * Small source (640×360) → **exactly one** rendition at the source's own 640×360 (labelled 480p by
+    the fallback), i.e. no upscaling to any higher rung (Req 6.2).
+  * Thumbnails are real frames: `ffprobe` reports `codec_name=mjpeg` at 3840×2160 and 640×360
+    respectively (not blank placeholders). Confirms Req 6.2, 6.3. Human sign-off recorded.
+- **Task 8.10 — HVC #5 (atomic tmp-then-rename). PASSED.** Ran the real worker on a longer 4K source
+  as a killable process and `kill -9`'d it mid-transcode. Observed state at the kill:
+  * `tmp/<id>/` held a partial `2k.mp4` (an in-progress rendition), while **`renditions/<id>/` and
+    `thumbnails/<id>.jpg` did not exist** — no incomplete file ever appears under the final paths
+    (the worker only `move`s into place after all transcodes complete). The original was intact.
+  * Re-running the worker on the same id cleaned the stale `tmp/<id>/` partial and produced a full,
+    correct set (2K/1080p/720p/480p at the right dimensions + a real thumbnail), with `tmp/<id>/`
+    cleaned afterward. Confirms the atomic staging + idempotent recovery (Req 6.4, 7.3). Human
+    sign-off recorded.
+- **Task 8.11 — HVC #10 (property tests are meaningful). PASSED.** Reviewed each `fast-check`
+  generator/assertion (planner: downscale-only + even-dims + unique-labels over random dimensions;
+  worker Properties 13/14/15/18: complete output set, completeness⇒COMPLETED, failure⇒FAILED with no
+  partial final output, retry idempotence). Then injected three known bugs and confirmed the relevant
+  property/tests fail (and only those), restoring the source via `git checkout` after each:
+  * Removed the success-path `tmp/<id>/` cleanup → **Property 13 and Property 18 failed** (tmp not
+    cleaned); 14/15 stayed green.
+  * Made the failure path report `COMPLETED` instead of `FAILED` → **Property 15 failed**; 13/14/18
+    stayed green.
+  * Removed the downscale-only guard in `planRenditions` (allow upscaling) → the planner's
+    **"never upscales" property + the three downscale unit tests failed**; unrelated tests stayed
+    green.
+  After restoring, all suites are green again (12/12) with a clean `git status`. Confirms the
+  property tests genuinely catch regressions. Human sign-off recorded.
 
 ## 7. AI mistakes / hallucinations / unsafe suggestions discovered
 
@@ -319,10 +393,16 @@ Read end to end on completion of Task 17 and confirmed it matches reality:
   unhealthy and the pods leave Service rotation when `/uploads` is lost, within the <5 s budget).
   Builds are clean across all packages and the frontend. The live deploy also caught and fixed three
   real backend container-image defects (section 7).
-- **What is NOT yet verified live (stated plainly):** HVC #7 (rolling update with no request loss /
-  rollback) and the rest of Task 15 (multi-replica failover + file durability, `docs/failover-test.md`),
-  plus Task 18 (clean-environment README reproducibility, HVC #11). These remain to be run against
-  the now-healthy `kind-video-platform` cluster; nothing currently blocks them.
+- **Also verified live (Task 15):** multi-replica failover (backend and frontend replica loss with
+  zero request loss), file durability across backend pod recycling, and HVC #7 (zero-downtime
+  rolling update + rollback) — see the Task 15 entry in section 6 and `docs/failover-test.md`.
+- **Also verified live (Task 18 — HVC #11):** from a fully clean environment, following the README
+  exactly (`cluster-up.sh` → `build.sh` → `deploy.sh ha`) reproduced the platform, and the
+  Sample_Video uploaded through the ingress Access_Endpoint (`http://localhost/`) processed to
+  COMPLETED with both renditions and the thumbnail served over `/files` (incl. HTTP 206 range
+  requests). See the Task 18 entry in section 6.
+- **All Human Verification Checkpoints are complete:** HVC #1–#12 have been performed and recorded
+  in section 6 (including the processing-worker checkpoints HVC #2/#5/#10 from spec tasks 8.9–8.11).
 - **Safety note:** the machine's default kube-context is a production AWS EKS cluster. All Kubernetes
   work was confined to the local `kind-video-platform` context, and the `deploy.sh`/`cleanup.sh`
   scripts print and confirm the target context before acting (and are namespace-scoped).

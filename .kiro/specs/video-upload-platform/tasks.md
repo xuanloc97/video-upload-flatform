@@ -154,7 +154,7 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
 - [x] 7. Checkpoint - backend runnable and tested
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Implement the processing worker (FFmpeg renditions, thumbnail, recovery)
+- [x] 8. Implement the processing worker (FFmpeg renditions, thumbnail, recovery)
   - [x] 8.1 Implement job loop with atomic claim and status transition
     - Node + TypeScript worker that polls the backend's `claimNext` (or DB via backend) to atomically move one `PENDING` record to `PROCESSING`, reads `originals/<id>.mp4` from `/uploads`
     - _Requirements: 6.1_
@@ -187,15 +187,15 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Run the real FFmpeg path once on the sample to confirm the stub matches reality
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 8.9 Verify FFmpeg rendition correctness manually (HVC #2)
+  - [x] 8.9 Verify FFmpeg rendition correctness manually (HVC #2)
     - Inspect outputs with `ffprobe -show_entries stream=width,height`; confirm 2K/1080p/720p/480p dimensions, aspect ratio preserved, small sources gain no higher renditions, and the thumbnail is a real frame; record in `docs/ai-usage-log.md`
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 8.10 Verify atomic tmp-then-rename behavior manually (HVC #5)
+  - [x] 8.10 Verify atomic tmp-then-rename behavior manually (HVC #5)
     - Kill the worker mid-transcode; confirm only `tmp/<id>/` holds partials and no incomplete file appears under final paths; re-run and confirm a clean complete set; record in `docs/ai-usage-log.md`
     - _Requirements: 6.4, 7.3_
 
-  - [ ] 8.11 Verify property tests are meaningful (HVC #10)
+  - [x] 8.11 Verify property tests are meaningful (HVC #10)
     - Review each `fast-check` generator/assertion; inject a known bug and confirm the relevant property fails, then restore; record in `docs/ai-usage-log.md`
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 7.3_
 
@@ -264,20 +264,20 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Simulate `/uploads` loss and confirm `/health/ready` reports unhealthy and the pod leaves rotation; confirm probe response well under 5s; record in `docs/ai-usage-log.md`
     - _Requirements: 5.2, 5.3_
 
-- [ ] 15. Verify high availability and failover
-  - [ ] 15.1 Verify multi-replica failover and file durability
+- [x] 15. Verify high availability and failover
+  - [x] 15.1 Verify multi-replica failover and file durability
     - Terminate one backend replica and one frontend replica and confirm each tier keeps serving; delete/recreate a backend pod and confirm previously uploaded files, renditions, and thumbnails remain available (re-run of HVC #4 concurrency/survival during failover)
     - _Requirements: 11.3, 11.4, 12.1, 12.2, 12.3_
 
-  - [ ] 15.2 Verify rolling update with no request loss and rollback (HVC #7)
+  - [x] 15.2 Verify rolling update with no request loss and rollback (HVC #7)
     - Run a rollout while a request loop hits the backend and confirm zero failed requests; run `kubectl rollout undo` and confirm the previous version serves again; record in `docs/ai-usage-log.md`
     - _Requirements: 12.4, 12.5_
 
-  - [ ] 15.3 Write the failover test document
+  - [x] 15.3 Write the failover test document
     - Create `docs/failover-test.md` covering cases tested, commands/steps used, results observed, downtime/issues, and production improvements
     - _Requirements: 13.3_
 
-- [ ] 16. Checkpoint - deployed, highly available, failover demonstrated
+- [x] 16. Checkpoint - deployed, highly available, failover demonstrated
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 17. Complete documentation deliverables
@@ -297,11 +297,11 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Ensure the living log records tools used, purposes, representative prompts, accepted/rejected/modified outputs, verification steps, and AI mistakes discovered across all phases; read it end to end and confirm it matches reality
     - _Requirements: 14.1, 14.2, 14.3_
 
-- [ ] 18. Final end-to-end reproducibility verification (HVC #11)
+- [x] 18. Final end-to-end reproducibility verification (HVC #11)
   - On a clean environment, follow the README exactly: bring up the cluster, build, deploy, upload the Sample_Video, and confirm renditions + thumbnail appear via the Access_Endpoint; record the result in `docs/ai-usage-log.md`
   - _Requirements: 10.7, 13.1, 15.1, 15.2_
 
-- [ ] 19. Final checkpoint - all deliverables complete
+- [x] 19. Final checkpoint - all deliverables complete
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
