@@ -1,31 +1,346 @@
 # Video Upload Platform
 
-A small but fully working video upload and processing platform deployed on a local Kubernetes
-environment. Users upload MP4 videos (including 4K) through a React frontend; a NestJS GraphQL
-backend stores them on an NFS-backed shared filesystem; and a dedicated FFmpeg processing worker
-transcodes each upload into multiple resolutions plus a thumbnail.
+A small but fully working video upload and processing platform that runs on a local Kubernetes
+cluster. Users upload MP4 videos (including 4K) through a React frontend; a NestJS GraphQL backend
+validates and stores them on an NFS-backed shared filesystem; and a dedicated FFmpeg worker
+transcodes each upload into multiple resolutions (2K / 1080p / 720p / 480p, downscale-only) plus a
+thumbnail. Status flows `PENDING → PROCESSING → COMPLETED` (or `FAILED`) and the frontend polls it
+live.
 
-> **Status:** scaffolding in progress. This README is a stub and will be completed in a later task
-> (see `.kiro/specs/video-upload-platform/tasks.md`, Task 17.1).
+- **Frontend:** React + TypeScript + Vite, Apollo Client (`apollo-upload-client`), served by NGINX.
+- **Backend:** NestJS + Apollo Server (GraphQL), streaming uploads, single-writer SQLite metadata,
+  `@nestjs/terminus` health checks, an HTTP file route with range support.
+- **Processing:** Node + TypeScript worker using FFmpeg; atomic job claim + tmp-then-rename output.
+- **Shared storage:** a single `ReadWriteMany` NFS volume mounted at `/uploads` by backend and
+  worker; also holds `metadata.db`.
+- **Deployment:** Kustomize (`base` + `dev`/`ha` overlays), an in-cluster NFS provisioner, and an
+  NGINX Ingress, all on `kind`.
+
+See [`docs/architecture.md`](docs/architecture.md) for the design and trade-offs, and
+[`docs/production-notes.md`](docs/production-notes.md) for how this would change at production scale.
 
 ## Repository structure
 
 ```
-/frontend      # React SPA
-/backend       # NestJS GraphQL service
-/processing    # FFmpeg worker
-/shared        # Shared TypeScript types + storage/metadata abstractions (used by backend & processing)
-/deployment    # Kustomize base + overlays, NFS, ingress
-/scripts       # build.sh, deploy.sh, cleanup.sh
-/docs          # architecture.md, failover-test.md, production-notes.md, ai-usage-log.md
-/samples       # Sample_Video
-README.md
+/frontend      # React SPA (Vite)            — standalone package
+/backend       # NestJS GraphQL service      — npm workspace
+/processing    # FFmpeg worker               — npm workspace
+/shared        # Shared types + Storage/MetadataStore abstractions — npm workspace
+/deployment    # Kustomize base + overlays (dev, ha), NFS, ingress, kind config; monitoring/ (Prometheus + Grafana)
+/scripts       # cluster-up.sh, build.sh, deploy.sh, test.sh, cleanup.sh, generate-sample.sh, monitoring-up.sh
+/docs          # architecture.md, production-notes.md, failover-test.md, ai-usage-log.md
+/samples       # sample-video.mp4 (the Sample_Video)
 ```
+
+Each code package keeps implementation and tests separate: source lives under `<package>/src/` and
+tests under `<package>/test/`, with the `test/` tree mirroring `src/`. The Node packages
+(`shared`, `backend`, `processing`) type-check tests via a `tsconfig.test.json` so the production
+`tsc --build` only compiles `src/`; the frontend runs its tests with Vitest from `frontend/test/`.
 
 ## Prerequisites
 
-To be documented (Docker, `kubectl`, `kind`, Node.js). See Task 17.1.
+- **Docker** (running)
+- **kind** (Kubernetes in Docker) and **kubectl**
+- **Node.js >= 18** (Node 20 recommended) and npm — for building/testing locally
+- **FFmpeg** (`ffmpeg` + `ffprobe`) — only needed to run the worker/tests outside a container; the
+  processing container image bundles its own FFmpeg
 
-## Quick start
+> **Memory:** a `kind` control-plane plus this stack needs a host with enough RAM (≈8 GB+ free is
+> comfortable; ~5 GB works for the single-replica `dev` overlay). A ~4 GB host is enough for the
+> `dev` overlay but tight for the full `ha` stack.
 
-To be documented. See Task 17.1.
+## Build and test the code (no cluster)
+
+The quickest path is the helper, which installs, builds, and tests every package (shared, backend,
+processing, and the frontend). It requires Node >= 18 (Node 20 recommended):
+
+```bash
+bash scripts/test.sh
+```
+
+Or run the steps by hand:
+
+```bash
+npm install                     # installs the shared/backend/processing workspaces
+npm run build                   # tsc --build across the workspaces
+npm test --workspaces --if-present   # shared + backend + processing test suites
+
+# Frontend is a separate package:
+cd frontend && npm install && npm run build && npm test
+```
+
+## Run on Kubernetes (kind)
+
+All commands assume Docker is running and your shell can reach `kind`/`kubectl`.
+
+### 1. Create the cluster and install the ingress controller
+
+```bash
+bash scripts/cluster-up.sh
+```
+
+This creates the `video-platform` kind cluster (with ingress-ready port mappings from
+`deployment/kind-cluster.yaml`), installs the NGINX ingress controller, and waits for it to be
+ready. It is idempotent — if the cluster already exists it is reused. To do it by hand instead:
+
+```bash
+kind create cluster --config deployment/kind-cluster.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+kubectl wait --namespace ingress-nginx \
+  --for=condition=Ready pod \
+  --selector=app.kubernetes.io/component=controller --timeout=180s
+```
+
+### 2. Build the images and load them into kind
+
+```bash
+bash scripts/build.sh video-platform
+```
+
+This builds `video-platform/{backend,processing,frontend}:dev` and `kind load`s them into the
+cluster named `video-platform`.
+
+### 3. Deploy
+
+```bash
+# dev = single replica per tier (lighter); ha = backend/frontend x2 + zero-downtime backend rollout
+bash scripts/deploy.sh dev      # or: bash scripts/deploy.sh ha
+```
+
+`deploy.sh` prints the target kube-context and asks for confirmation before applying (set
+`CONFIRM=yes` to skip the prompt in automation). It waits for the rollouts and prints how to reach
+the app.
+
+### 4. Access the frontend (Access_Endpoint)
+
+With the ingress controller installed and the kind port mappings, browse to:
+
+```
+http://localhost/
+```
+
+**Fallback (no ingress):** port-forward the two Services and use the frontend directly:
+
+```bash
+kubectl -n video-platform port-forward svc/frontend 8080:80
+kubectl -n video-platform port-forward svc/backend  3000:3000
+# then open http://localhost:8080/
+```
+
+## Upload and process the Sample_Video
+
+A short real MP4 lives at [`samples/sample-video.mp4`](samples/sample-video.mp4) (1280×720, ~3 s).
+You can regenerate it with `bash scripts/generate-sample.sh`.
+
+1. Open the frontend, choose `samples/sample-video.mp4`, and click **Upload**. A success banner
+   confirms the upload; the video appears in the list as **Pending**.
+2. The worker claims the job (**Processing**) and, when done, the row shows **Completed**.
+3. Click **View** on the completed row to see the **thumbnail** and play each **rendition** (720p,
+   480p for this source — downscale-only, so a 720p source produces no 2K/1080p).
+
+### Verify renditions and the thumbnail
+
+```bash
+# List the produced files on the shared volume (via a backend pod):
+POD=$(kubectl -n video-platform get pod -l app.kubernetes.io/name=backend -o name | head -1)
+kubectl -n video-platform exec "$POD" -- ls -R /uploads/renditions /uploads/thumbnails
+
+# Or inspect a rendition's dimensions with ffprobe (from the processing pod, which has ffprobe):
+PROC=$(kubectl -n video-platform get pod -l app.kubernetes.io/name=processing -o name | head -1)
+kubectl -n video-platform exec "$PROC" -- ffprobe -v error \
+  -show_entries stream=width,height -of csv=p=0 /uploads/renditions/<id>/720p.mp4
+```
+
+The GraphQL `videoMetadata(id)` query returns the thumbnail URL and rendition file URLs once a
+record is `COMPLETED`; the frontend uses those `/files/...` URLs for display and playback.
+
+## Failover tests
+
+See [`docs/failover-test.md`](docs/failover-test.md) for the multi-replica failover and
+rolling-update procedures (terminate a backend/frontend replica and confirm the tier keeps serving;
+delete/recreate a backend pod and confirm previously uploaded files survive; run a rollout with a
+request loop and confirm zero failed requests, then `kubectl rollout undo`).
+
+## Monitoring (Prometheus + Grafana)
+
+An optional monitoring stack lives in [`deployment/monitoring`](deployment/monitoring) and deploys
+into its own `monitoring` namespace, independent of the app overlays. Prometheus scrapes the kubelet
+cAdvisor endpoint (per-pod CPU / memory / network for the whole cluster, including the
+`video-platform` pods), and Grafana comes up with the Prometheus datasource and a **Video Upload
+Platform** dashboard already provisioned.
+
+### Deploy
+
+```bash
+bash scripts/monitoring-up.sh          # applies deployment/monitoring, waits for rollout
+# or directly:
+kubectl apply -k deployment/monitoring
+```
+
+Upstream images (`prom/prometheus`, `grafana/grafana`) are pulled by the kind node, so no
+`build.sh`/`kind load` step is needed.
+
+### Access
+
+Both sit behind the same ingress as the app (more specific paths win over the app's `/` rule):
+
+```
+http://localhost/grafana       # login: admin / admin (demo only) — dashboard is pre-loaded
+http://localhost/prometheus    # raw Prometheus UI / target status
+```
+
+**Fallback (no ingress):**
+
+```bash
+kubectl -n monitoring port-forward svc/grafana    3001:3000    # http://localhost:3001/grafana
+kubectl -n monitoring port-forward svc/prometheus 9090:9090    # http://localhost:9090/prometheus
+```
+
+In Grafana, open **Dashboards → Video Upload Platform** for live CPU, memory, and network per pod.
+Confirm Prometheus is scraping with **Status → Targets** (the `kubernetes-cadvisor` target should be
+`up`).
+
+> **Security:** this is a local-demo setup — Grafana uses default `admin`/`admin` credentials, the
+> TSDB is a non-durable `emptyDir` (history resets on pod restart), and there is no TLS. See
+> [`docs/production-notes.md`](docs/production-notes.md) for how this hardens at production scale.
+
+### Tear down
+
+```bash
+kubectl delete -k deployment/monitoring
+```
+
+## Troubleshooting
+
+### Upload fails with `Received status code 405`
+
+**Cause:** you are reaching the SPA _without_ going through the ingress (typically the
+`kubectl port-forward svc/frontend 8080:80` fallback). The SPA issues a same-origin `POST /graphql`,
+which then hits the frontend's static NGINX instead of the backend. NGINX only allows `GET`/`HEAD`
+on static files, so the `POST` is rejected with **405 Method Not Allowed**.
+
+**Fix:** open the app through the ingress at **`http://localhost/`**. The ingress routes `/graphql`,
+`/health`, and `/files` to the backend, so uploads work. (If you must use the port-forward fallback,
+port-forward the backend too and note that the SPA still calls same-origin `/graphql` — the ingress
+path is the supported one.)
+
+### Upload fails with `Received status code 400` (CSRF)
+
+**Cause:** Apollo Server enables CSRF prevention by default, which blocks `multipart/form-data`
+upload requests unless a preflight header is present. `apollo-upload-client` does not add that header
+automatically, so the request is rejected with:
+
+```
+This operation has been blocked as a potential Cross-Site Request Forgery (CSRF)...
+```
+
+The backend logs show no resolver error because the request is blocked before it reaches the
+resolver.
+
+**Fix:** the Apollo upload link sends `Apollo-Require-Preflight: true` (see
+`frontend/src/apollo.ts`). If you change this, rebuild and redeploy the frontend, then hard-refresh
+the browser (Cmd+Shift+R) so the new JS bundle is loaded:
+
+```bash
+bash scripts/build.sh video-platform            # or: docker build -t video-platform/frontend:dev ./frontend && kind load docker-image video-platform/frontend:dev --name video-platform
+kubectl -n video-platform rollout restart deploy/frontend
+```
+
+### "I don't see an uploads folder in the project"
+
+Uploaded files are **not** stored in the repo/workspace. They live inside the cluster on the
+`ReadWriteMany` `uploads-pvc` (provisioned by the in-cluster NFS provisioner) and are mounted at
+`/uploads` in the backend and processing pods. Inspect them via a backend pod:
+
+```bash
+kubectl -n video-platform exec deploy/backend -- ls -la /uploads
+# subfolders: originals/  renditions/  thumbnails/  tmp/   plus metadata.db
+```
+
+### `GET /health` returns 404
+
+The backend does not expose a bare `/health` route. The actual health endpoints are
+`/health/live` and `/health/ready` (used by the Kubernetes liveness/readiness probes). Curl those
+paths directly instead of `/health`.
+
+### Rebuilding an image has no effect
+
+The deployments use the `:dev` tag with no explicit `imagePullPolicy`, so Kubernetes defaults to
+`IfNotPresent` and keeps running the old image already on the node. After you rebuild, you must load
+the image into kind **and** restart the deployment:
+
+```bash
+docker build -t video-platform/frontend:dev ./frontend
+kind load docker-image video-platform/frontend:dev --name video-platform
+kubectl -n video-platform rollout restart deploy/frontend   # same pattern for backend / processing
+```
+
+`bash scripts/build.sh video-platform` does the build + `kind load` step for all three images; you
+still need the `rollout restart` (or a fresh `deploy.sh`) for running pods to pick them up.
+
+### Frontend change not visible after redeploy
+
+The browser caches the hashed JS bundle. After a frontend rebuild/rollout, hard-refresh the page
+(**Cmd+Shift+R** / Ctrl+Shift+R) so the new `index.html` and asset bundle are fetched. The HTML
+entrypoint is served `no-cache`, so a hard refresh is enough.
+
+### `processing` logs `Worker loop error: fetch failed`
+
+At startup the worker polls `http://backend:3000/graphql` before the backend Service/pod is ready,
+so a few `fetch failed` lines right after deploy are normal and self-recover once the backend is up.
+If it keeps repeating, the backend is not reachable — check the backend pods are `Running`/`Ready`
+and that `BACKEND_GRAPHQL_URL` (in `deployment/base/processing.yaml`) points at the backend Service:
+
+```bash
+kubectl -n video-platform get pods
+kubectl -n video-platform logs deploy/backend --tail=30
+```
+
+### Only some renditions are produced
+
+Transcoding is **downscale-only**: a rendition is generated only when it is smaller than the source.
+The bundled `samples/sample-video.mp4` is 720p, so it produces just 720p and 480p — no 2K/1080p.
+Upload a 4K/2K source to see the higher renditions. This is expected, not a failure.
+
+### `http://localhost/` refuses to connect or 404s
+
+The ingress path needs the NGINX ingress controller and the kind port mappings. Run
+`bash scripts/cluster-up.sh` (installs the controller and creates the cluster with ingress-ready
+ports) and confirm it is ready:
+
+```bash
+kubectl get pods -n ingress-nginx
+```
+
+If you cannot use the ingress, fall back to the port-forward described in
+[Access the frontend](#4-access-the-frontend-access_endpoint) and browse to `http://localhost:8080/`
+(note the 405 caveat above — the ingress path is the supported one).
+
+### Pods stuck `Pending` or `OOMKilled` (especially on the `ha` overlay)
+
+The full `ha` stack (backend/frontend x2 + FFmpeg worker) needs a host with enough free RAM; FFmpeg
+transcoding of 4K sources is memory-heavy (the worker limit is 1Gi). On a small machine use the
+lighter `dev` overlay, and check events for the cause:
+
+```bash
+kubectl -n video-platform describe pod <pod>   # look for Insufficient memory / OOMKilled
+```
+
+## Cleanup
+
+```bash
+bash scripts/cleanup.sh dev     # or: ha — matches the overlay you deployed
+```
+
+This deletes the overlay's resources and the `video-platform` namespace (namespace-scoped; it does
+not touch the rest of your cluster). It force-deletes any pods whose shared-NFS mount is hung so
+namespace termination can't stall, and clears the retained PersistentVolume so the next
+`deploy.sh` provisions a fresh, clean volume.
+
+To also tear down the whole local kind cluster in one go:
+
+```bash
+DELETE_CLUSTER=yes bash scripts/cleanup.sh ha
+# equivalent manual step:
+kind delete cluster --name video-platform
+```

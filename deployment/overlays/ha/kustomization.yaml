@@ -1,0 +1,44 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# HA overlay: run the stateless tiers (backend, frontend) with >=2 replicas behind their Services so
+# the platform tolerates the loss of an individual pod, and use a zero-downtime rolling update for
+# the backend. Processing stays single-replica by design (single-writer queue).
+namespace: video-platform
+
+resources:
+  - ../../base
+
+images:
+  - name: video-platform/backend
+    newTag: dev
+  - name: video-platform/processing
+    newTag: dev
+  - name: video-platform/frontend
+    newTag: dev
+
+patches:
+  # Backend: 2 replicas + RollingUpdate with maxUnavailable:0 so a rollout never drops capacity
+  # (readiness gating keeps traffic on healthy pods), and maxSurge:1 brings up a new pod first.
+  - target:
+      kind: Deployment
+      name: backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: add
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1
+  # Frontend: 2 replicas (stateless static assets).
+  - target:
+      kind: Deployment
+      name: frontend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2

@@ -1,0 +1,22 @@
+# kind cluster config for the local demo.
+#
+# Single node, labelled ingress-ready and mapping host ports 80/443 to the node so an NGINX ingress
+# controller is reachable at http://localhost/. This mirrors the documented Access_Endpoint.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: video-platform
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP

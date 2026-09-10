@@ -2,10 +2,11 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  roots: ['<rootDir>/src'],
+  // Tests live in a separate test/ tree that mirrors src/. ts-jest uses tsconfig.test.json (rootDir
+  // covers both src and test, and decorator metadata is inherited for NestJS DI).
+  roots: ['<rootDir>/test'],
   testMatch: ['**/*.test.ts'],
-  // Decorator metadata is required for NestJS DI; ts-jest reads it from the backend tsconfig.
   transform: {
-    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }],
+    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.test.json' }],
   },
 };

@@ -85,223 +85,223 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Upload a real MP4 and a 4K MP4 (both accepted); upload a renamed `.txt`, a truncated MP4, and a non-MP4 with a spoofed extension (all rejected with descriptive errors and no record/file created); record the result in `docs/ai-usage-log.md`
     - _Requirements: 2.4, 2.5_
 
-- [ ] 5. Implement backend listing, status, metadata, and file-serving APIs
-  - [-] 5.1 Implement `videos` and `videoStatus` queries
+- [x] 5. Implement backend listing, status, metadata, and file-serving APIs
+  - [x] 5.1 Implement `videos` and `videoStatus` queries
     - Return every Upload_Record with id, original filename, upload timestamp, and status; return current status for a valid id and a descriptive error for an unknown id
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-  - [ ] 5.2 Implement `videoMetadata` query and the file-serving route
+  - [x] 5.2 Implement `videoMetadata` query and the file-serving route
     - Return thumbnail + rendition references only when `COMPLETED` (otherwise current status with no refs); add a REST-style `/files/...` route that streams renditions/thumbnails from `/uploads` with correct content types and HTTP range support for playback
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-  - [ ]* 5.3 Write property test for listing completeness
+  - [x]* 5.3 Write property test for listing completeness
     - **Property 5: Listing returns every record with all required fields**
     - **Validates: Requirements 3.1, 3.2**
 
-  - [ ]* 5.4 Write property test for status consistency
+  - [x]* 5.4 Write property test for status consistency
     - **Property 6: Status query is consistent with stored state**
     - **Validates: Requirements 3.3, 3.5**
 
-  - [ ]* 5.5 Write property test for status of a missing id
+  - [x]* 5.5 Write property test for status of a missing id
     - **Property 7: Status query for a missing id errors**
     - **Validates: Requirements 3.4**
 
-  - [ ]* 5.6 Write property test for COMPLETED metadata completeness
+  - [x]* 5.6 Write property test for COMPLETED metadata completeness
     - **Property 8: Metadata for COMPLETED records is complete**
     - **Validates: Requirements 4.1, 4.2**
 
-  - [ ]* 5.7 Write property test for retrievable referenced files
+  - [x]* 5.7 Write property test for retrievable referenced files
     - **Property 9: Referenced files are retrievable**
     - **Validates: Requirements 4.3, 4.4**
 
-  - [ ]* 5.8 Write property test for withholding metadata until COMPLETED
+  - [x]* 5.8 Write property test for withholding metadata until COMPLETED
     - **Property 10: Metadata is withheld until COMPLETED**
     - **Validates: Requirements 4.5**
 
-  - [ ]* 5.9 Write unit tests for query/resolver shape and file-route range requests
+  - [x]* 5.9 Write unit tests for query/resolver shape and file-route range requests
     - Confirm the existence/shape of `uploadVideo`, `videos`, `videoStatus`, `videoMetadata`; test range requests for playback
     - _Requirements: 2.1, 3.1_
 
-- [ ] 6. Implement backend health checks and processing callbacks
-  - [ ] 6.1 Implement `@nestjs/terminus` liveness/readiness with `/uploads` reachability
+- [x] 6. Implement backend health checks and processing callbacks
+  - [x] 6.1 Implement `@nestjs/terminus` liveness/readiness with `/uploads` reachability
     - Expose `/health/live` and `/health/ready`; readiness includes a writable-check on `/uploads` and reports unhealthy when unreachable; ensure probes respond well under 5 seconds
     - _Requirements: 5.1, 5.2, 5.3_
 
-  - [ ] 6.2 Implement `updateProcessingResult`, `retryProcessing`, and `claimNext` operations
+  - [x] 6.2 Implement `updateProcessingResult`, `retryProcessing`, and `claimNext` operations
     - Add the internal `updateProcessingResult` mutation (backend owns all writes), the atomic `claimNext` claim (`UPDATE ... WHERE status='PENDING'` → `PROCESSING`), and `retryProcessing` (FAILED → PENDING); add stuck-job recovery that resets `PROCESSING` records past a timeout back to `PENDING`
     - _Requirements: 6.1, 7.1, 7.2_
 
-  - [ ]* 6.3 Write property test for unhealthy-when-storage-unreachable
+  - [x]* 6.3 Write property test for unhealthy-when-storage-unreachable
     - **Property 11: Unhealthy when storage is unreachable**
     - **Validates: Requirements 5.2**
 
-  - [ ]* 6.4 Write property test for atomic exclusive job claim
+  - [x]* 6.4 Write property test for atomic exclusive job claim
     - **Property 12: Claiming a job is atomic and exclusive**
     - **Validates: Requirements 6.1**
 
-  - [ ]* 6.5 Write property test for stuck-job recovery
+  - [x]* 6.5 Write property test for stuck-job recovery
     - **Property 16: Stuck jobs recover to PENDING**
     - **Validates: Requirements 7.1**
 
-  - [ ]* 6.6 Write property test for retry reset
+  - [x]* 6.6 Write property test for retry reset
     - **Property 17: Retry resets a FAILED record to PENDING**
     - **Validates: Requirements 7.2**
 
-  - [ ]* 6.7 Write unit test for a healthy health-check response
+  - [x]* 6.7 Write unit test for a healthy health-check response
     - Confirm `/health/ready` and `/health/live` succeed under normal conditions
     - _Requirements: 5.1_
 
-- [ ] 7. Checkpoint - backend runnable and tested
+- [x] 7. Checkpoint - backend runnable and tested
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Implement the processing worker (FFmpeg renditions, thumbnail, recovery)
-  - [ ] 8.1 Implement job loop with atomic claim and status transition
+- [x] 8. Implement the processing worker (FFmpeg renditions, thumbnail, recovery)
+  - [x] 8.1 Implement job loop with atomic claim and status transition
     - Node + TypeScript worker that polls the backend's `claimNext` (or DB via backend) to atomically move one `PENDING` record to `PROCESSING`, reads `originals/<id>.mp4` from `/uploads`
     - _Requirements: 6.1_
 
-  - [ ] 8.2 Implement downscale-only rendition + thumbnail transcode with atomic tmp-then-rename
+  - [x] 8.2 Implement downscale-only rendition + thumbnail transcode with atomic tmp-then-rename
     - Use `fluent-ffmpeg`/FFmpeg to scale to 2K/1080p/720p/480p with aspect ratio preserved and downscale-only (small sources skip higher renditions), extract one thumbnail frame, write all outputs to `tmp/<id>/` and atomically move into `renditions/<id>/` and `thumbnails/<id>.jpg` on success
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 8.3 Wire completion/failure/retry callbacks to the backend
+  - [x] 8.3 Wire completion/failure/retry callbacks to the backend
     - On success call `updateProcessingResult(COMPLETED, refs)`; on any error call `updateProcessingResult(FAILED, error)` leaving the original intact; ensure a retried run cleans `tmp/<id>/` and reproduces a full equivalent output set
     - _Requirements: 6.4, 6.5, 7.3_
 
-  - [ ]* 8.4 Write property test for complete output set on success
+  - [x]* 8.4 Write property test for complete output set on success
     - **Property 13: Successful processing produces a complete output set** (validate against a stubbed FFmpeg for speed)
     - **Validates: Requirements 6.2, 6.3**
 
-  - [ ]* 8.5 Write property test for output completeness implying COMPLETED
+  - [x]* 8.5 Write property test for output completeness implying COMPLETED
     - **Property 14: Output completeness implies COMPLETED**
     - **Validates: Requirements 6.4**
 
-  - [ ]* 8.6 Write property test for failure implying FAILED
+  - [x]* 8.6 Write property test for failure implying FAILED
     - **Property 15: Processing failure implies FAILED**
     - **Validates: Requirements 6.5**
 
-  - [ ]* 8.7 Write property test for retry idempotence
+  - [x]* 8.7 Write property test for retry idempotence
     - **Property 18: Retry produces an equivalent output set (idempotence)**
     - **Validates: Requirements 7.3**
 
-  - [ ]* 8.8 Write integration pass with real FFmpeg on the Sample_Video
+  - [x]* 8.8 Write integration pass with real FFmpeg on the Sample_Video
     - Run the real FFmpeg path once on the sample to confirm the stub matches reality
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 8.9 Verify FFmpeg rendition correctness manually (HVC #2)
+  - [x] 8.9 Verify FFmpeg rendition correctness manually (HVC #2)
     - Inspect outputs with `ffprobe -show_entries stream=width,height`; confirm 2K/1080p/720p/480p dimensions, aspect ratio preserved, small sources gain no higher renditions, and the thumbnail is a real frame; record in `docs/ai-usage-log.md`
     - _Requirements: 6.2, 6.3_
 
-  - [ ] 8.10 Verify atomic tmp-then-rename behavior manually (HVC #5)
+  - [x] 8.10 Verify atomic tmp-then-rename behavior manually (HVC #5)
     - Kill the worker mid-transcode; confirm only `tmp/<id>/` holds partials and no incomplete file appears under final paths; re-run and confirm a clean complete set; record in `docs/ai-usage-log.md`
     - _Requirements: 6.4, 7.3_
 
-  - [ ] 8.11 Verify property tests are meaningful (HVC #10)
+  - [x] 8.11 Verify property tests are meaningful (HVC #10)
     - Review each `fast-check` generator/assertion; inject a known bug and confirm the relevant property fails, then restore; record in `docs/ai-usage-log.md`
     - _Requirements: 6.2, 6.3, 6.4, 6.5, 7.3_
 
-- [ ] 9. Add the Sample_Video and demonstrate end-to-end flow locally
+- [x] 9. Add the Sample_Video and demonstrate end-to-end flow locally
   - Add one short MP4 `Sample_Video` under `/samples`; run backend + worker locally against the temp storage to confirm upload → PENDING → PROCESSING → COMPLETED with renditions and thumbnail
   - _Requirements: 6.6_
 
-- [ ] 10. Checkpoint - processing pipeline runnable end to end
+- [x] 10. Checkpoint - processing pipeline runnable end to end
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. Implement the frontend (React SPA)
-  - [ ] 11.1 Scaffold React + TypeScript + Vite app with Apollo Client
+- [x] 11. Implement the frontend (React SPA)
+  - [x] 11.1 Scaffold React + TypeScript + Vite app with Apollo Client
     - Set up Apollo Client and `apollo-upload-client`; ensure all API access goes exclusively through GraphQL
     - _Requirements: 9.5_
 
-  - [ ] 11.2 Implement upload view with success/error feedback
+  - [x] 11.2 Implement upload view with success/error feedback
     - `<input type="file" accept="video/mp4">` + submit; upload via GraphQL; show a success indication on confirmation and a failure indication with the returned error message
     - _Requirements: 8.1, 8.2, 8.3, 8.4_
 
-  - [ ] 11.3 Implement list/status view with polling
+  - [x] 11.3 Implement list/status view with polling
     - Display the list of uploads with filename, upload time, and live status badges; poll `videos`/`videoStatus` to reflect transitions
     - _Requirements: 9.1, 9.2_
 
-  - [ ] 11.4 Implement thumbnail display and rendition playback/links
+  - [x] 11.4 Implement thumbnail display and rendition playback/links
     - For `COMPLETED` records show the thumbnail and provide access to each available rendition via an HTML5 `<video>` player / links using backend file URLs
     - _Requirements: 9.3, 9.4_
 
-  - [ ]* 11.5 Write component tests (React Testing Library)
+  - [x]* 11.5 Write component tests (React Testing Library)
     - File-select control, upload submission wiring, success/error banners, list rendering with status badges, thumbnail display and rendition links for COMPLETED records
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 9.1, 9.2, 9.3, 9.4_
 
-- [ ] 12. Checkpoint - full stack runnable locally
+- [x] 12. Checkpoint - full stack runnable locally
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. Containerize and author Kubernetes deployment artifacts
-  - [ ] 13.1 Write Dockerfiles for backend, processing (with FFmpeg), and frontend (NGINX static)
+- [x] 13. Containerize and author Kubernetes deployment artifacts
+  - [x] 13.1 Write Dockerfiles for backend, processing (with FFmpeg), and frontend (NGINX static)
     - Multi-stage builds producing small images; frontend served as static assets by NGINX
     - _Requirements: 10.2, 10.7_
 
-  - [ ] 13.2 Author Kustomize base manifests for all workloads
+  - [x] 13.2 Author Kustomize base manifests for all workloads
     - Deployments + Services for frontend, backend, processing; mount `uploads-pvc` at `/uploads` in backend and processing; add resource limits, non-root securityContext, and correct image references; backend liveness/readiness probes hit `/health/live` and `/health/ready`
     - _Requirements: 10.1, 10.2, 10.5_
 
-  - [ ] 13.3 Author NGINX Ingress and document port-forward fallback
+  - [x] 13.3 Author NGINX Ingress and document port-forward fallback
     - Route `/` → frontend and `/graphql`, `/health`, `/files` → backend; document `kubectl port-forward` as the fallback Access_Endpoint
     - _Requirements: 10.4_
 
-  - [ ] 13.4 Create dev and ha Kustomize overlays
+  - [x] 13.4 Create dev and ha Kustomize overlays
     - `overlays/dev` (single replicas) and `overlays/ha` (backend/frontend ≥2 replicas, processing single replica, tuned probes, `RollingUpdate` with `maxUnavailable: 0` for backend)
     - _Requirements: 10.1, 11.1, 11.2, 12.4_
 
-  - [ ] 13.5 Author build.sh, deploy.sh, and cleanup.sh
+  - [x] 13.5 Author build.sh, deploy.sh, and cleanup.sh
     - `build.sh` builds and `kind load`s images; `deploy.sh` applies the chosen overlay; `cleanup.sh` runs namespace-scoped `kubectl delete -k` (+ namespace deletion) to remove all resources
     - _Requirements: 10.6, 15.3_
 
-  - [ ] 13.6 Review generated manifests and shell scripts (HVC #8 and #9)
+  - [x] 13.6 Review generated manifests and shell scripts (HVC #8 and #9)
     - Review `kubectl kustomize overlays/ha` for resource limits, securityContext, image refs, and no hardcoded secrets; read each script line by line for destructive/wrong-context commands and confirm deletes are namespace-scoped and kube-context is checked; record both reviews in `docs/ai-usage-log.md`
     - _Requirements: 10.6, 10.x, 15.3_
 
-- [ ] 14. Deploy to kind and verify runtime health, storage safety, and probes
-  - [ ] 14.1 Deploy the stack and verify SQLite single-writer safety (HVC #3)
+- [x] 14. Deploy to kind and verify runtime health, storage safety, and probes
+  - [x] 14.1 Deploy the stack and verify SQLite single-writer safety (HVC #3)
     - Deploy with ≥2 backend replicas; drive concurrent uploads/status updates, then run `PRAGMA integrity_check;` on `metadata.db` and confirm `ok` with no lost records; record in `docs/ai-usage-log.md`
     - _Requirements: 2.2, 3.2_
 
-  - [ ] 14.2 Verify health/readiness probe correctness (HVC #6)
+  - [x] 14.2 Verify health/readiness probe correctness (HVC #6)
     - Simulate `/uploads` loss and confirm `/health/ready` reports unhealthy and the pod leaves rotation; confirm probe response well under 5s; record in `docs/ai-usage-log.md`
     - _Requirements: 5.2, 5.3_
 
-- [ ] 15. Verify high availability and failover
-  - [ ] 15.1 Verify multi-replica failover and file durability
+- [x] 15. Verify high availability and failover
+  - [x] 15.1 Verify multi-replica failover and file durability
     - Terminate one backend replica and one frontend replica and confirm each tier keeps serving; delete/recreate a backend pod and confirm previously uploaded files, renditions, and thumbnails remain available (re-run of HVC #4 concurrency/survival during failover)
     - _Requirements: 11.3, 11.4, 12.1, 12.2, 12.3_
 
-  - [ ] 15.2 Verify rolling update with no request loss and rollback (HVC #7)
+  - [x] 15.2 Verify rolling update with no request loss and rollback (HVC #7)
     - Run a rollout while a request loop hits the backend and confirm zero failed requests; run `kubectl rollout undo` and confirm the previous version serves again; record in `docs/ai-usage-log.md`
     - _Requirements: 12.4, 12.5_
 
-  - [ ] 15.3 Write the failover test document
+  - [x] 15.3 Write the failover test document
     - Create `docs/failover-test.md` covering cases tested, commands/steps used, results observed, downtime/issues, and production improvements
     - _Requirements: 13.3_
 
-- [ ] 16. Checkpoint - deployed, highly available, failover demonstrated
+- [x] 16. Checkpoint - deployed, highly available, failover demonstrated
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 17. Complete documentation deliverables
-  - [ ] 17.1 Write README.md
+- [x] 17. Complete documentation deliverables
+  - [x] 17.1 Write README.md
     - Cover project overview, prerequisites, Kubernetes setup, build steps, deploy steps, frontend access, uploading and processing the Sample_Video, verifying renditions and the thumbnail, running failover tests, and cleanup
     - _Requirements: 13.1_
 
-  - [ ] 17.2 Write architecture.md
+  - [x] 17.2 Write architecture.md
     - Cover architecture overview, components, data flow, storage design, video processing design, failure handling, and trade-offs/limitations; explain why the shared-storage approach was chosen, how it works, its failover behavior, and reliability limitations
     - _Requirements: 13.2, 13.6_
 
-  - [ ] 17.3 Write production-notes.md
+  - [x] 17.3 Write production-notes.md
     - Cover scalability, large uploads, long-running processing, retry/failure handling, storage choice, security, observability, cost, CI/CD, and cloud deployment; explain how the design changes for larger workloads, high concurrency, long videos, and heavy transcoding traffic
     - _Requirements: 13.4, 13.5_
 
-  - [ ] 17.4 Finalize ai-usage-log.md and verify honesty (HVC #12)
+  - [x] 17.4 Finalize ai-usage-log.md and verify honesty (HVC #12)
     - Ensure the living log records tools used, purposes, representative prompts, accepted/rejected/modified outputs, verification steps, and AI mistakes discovered across all phases; read it end to end and confirm it matches reality
     - _Requirements: 14.1, 14.2, 14.3_
 
-- [ ] 18. Final end-to-end reproducibility verification (HVC #11)
+- [x] 18. Final end-to-end reproducibility verification (HVC #11)
   - On a clean environment, follow the README exactly: bring up the cluster, build, deploy, upload the Sample_Video, and confirm renditions + thumbnail appear via the Access_Endpoint; record the result in `docs/ai-usage-log.md`
   - _Requirements: 10.7, 13.1, 15.1, 15.2_
 
-- [ ] 19. Final checkpoint - all deliverables complete
+- [x] 19. Final checkpoint - all deliverables complete
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

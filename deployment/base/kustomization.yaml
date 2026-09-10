@@ -8,3 +8,7 @@ resources:
   - namespace.yaml
   - nfs-provisioner.yaml
   - uploads-storage.yaml
+  - backend.yaml
+  - processing.yaml
+  - frontend.yaml
+  - ingress.yaml

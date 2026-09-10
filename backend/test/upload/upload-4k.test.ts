@@ -5,8 +5,8 @@ import {
   TempDirStorage,
   TempSqliteMetadataStore,
 } from '@video-platform/shared';
-import { FfprobeMp4Probe } from '../ffprobe-mp4-probe';
-import { ORIGINALS_DIR, UploadService } from './upload.service';
+import { FfprobeMp4Probe } from '../../src/ffprobe-mp4-probe';
+import { ORIGINALS_DIR, UploadService } from '../../src/upload/upload.service';
 import { makeFtypBuffer, makeUpload, StubValidProbe } from './upload.test-helpers';
 
 const execFileAsync = promisify(execFile);

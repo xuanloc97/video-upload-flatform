@@ -1,5 +1,5 @@
 import * as fc from 'fast-check';
-import { FileSystemStorage, TempDirStorage } from './storage';
+import { FileSystemStorage, TempDirStorage } from '../src/storage';
 
 /*
  * Feature: video-upload-platform, Property 1: Storage round-trip

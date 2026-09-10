@@ -4,8 +4,8 @@ import {
   TempDirStorage,
   TempSqliteMetadataStore,
 } from '@video-platform/shared';
-import { InvalidMp4Error } from '../mp4-validation';
-import { ORIGINALS_DIR, UploadService } from './upload.service';
+import { InvalidMp4Error } from '../../src/mp4-validation';
+import { ORIGINALS_DIR, UploadService } from '../../src/upload/upload.service';
 import {
   makeFtypBuffer,
   makeUpload,

@@ -1,0 +1,18 @@
+# Keep build contexts small and reproducible.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+coverage
+**/coverage
+# Local runtime artifacts / uploads must never leak into an image.
+uploads/
+/uploads/
+**/tmp/
+# Editor / OS
+.DS_Store
+.idea
+.vscode
+# Frontend build output (rebuilt inside the image)
+frontend/dist
+frontend/node_modules

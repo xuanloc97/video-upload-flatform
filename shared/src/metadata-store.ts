@@ -33,6 +33,28 @@ export interface MetadataStore {
   /** Update mutable fields of an existing Upload_Record. Returns the updated record. */
   updateUpload(id: string, patch: UploadRecordPatch): UploadRecord;
 
+  /**
+   * Atomically claim the oldest `PENDING` record for processing: transition exactly one record
+   * from `PENDING` to `PROCESSING` and stamp `processingStartedAt`, returning the claimed record —
+   * or null if no `PENDING` record exists. The claim is exclusive across concurrent callers/
+   * processes (Req 6.1), so two workers can never grab the same job.
+   */
+  claimNext(now?: string): UploadRecord | null;
+
+  /**
+   * Recover stuck jobs: reset any record left in `PROCESSING` longer than `timeoutMs` back to
+   * `PENDING` (clearing `processingStartedAt`), making it eligible to be claimed again. Models a
+   * worker pod that died mid-job (Req 7.1). Returns the ids that were reset.
+   */
+  resetStuckProcessing(timeoutMs: number, now?: string): string[];
+
+  /**
+   * Documented manual retry (Req 7.2): reset a `FAILED` record to `PENDING`, clearing its error and
+   * `processingStartedAt` so the worker reprocesses it. Returns the updated record.
+   * @throws Error if the record does not exist or is not currently `FAILED`.
+   */
+  retryProcessing(id: string): UploadRecord;
+
   /** Replace the set of renditions for an upload. */
   setRenditions(uploadId: string, renditions: Rendition[]): void;
 
@@ -308,6 +330,102 @@ export class SqliteMetadataStore implements MetadataStore {
           error: next.error,
         });
       return next;
+    });
+  }
+
+  claimNext(now = new Date().toISOString()): UploadRecord | null {
+    return this.runWrite(() => {
+      // Pick the oldest PENDING id inside the same IMMEDIATE transaction, then flip it to
+      // PROCESSING guarded by `WHERE status='PENDING'`. The RESERVED lock taken by BEGIN IMMEDIATE
+      // plus the status guard make the claim atomic and exclusive across replicas (Req 6.1): a
+      // concurrent claimer either sees no PENDING row or fails the guarded UPDATE and retries.
+      const candidate = this.db
+        .prepare(
+          `SELECT id FROM upload_records
+            WHERE status = ?
+            ORDER BY uploaded_at ASC, id ASC
+            LIMIT 1`,
+        )
+        .get(ProcessingStatus.PENDING) as { id: string } | undefined;
+      if (!candidate) {
+        return null;
+      }
+
+      const info = this.db
+        .prepare(
+          `UPDATE upload_records
+              SET status = @processing, processing_started_at = @now
+            WHERE id = @id AND status = @pending`,
+        )
+        .run({
+          id: candidate.id,
+          processing: ProcessingStatus.PROCESSING,
+          pending: ProcessingStatus.PENDING,
+          now,
+        });
+
+      // If another writer claimed it between the SELECT and UPDATE, the guarded UPDATE affects 0
+      // rows; return null so the caller polls again rather than returning a record it did not claim.
+      if (info.changes === 0) {
+        return null;
+      }
+      return this.requireUpload(candidate.id);
+    });
+  }
+
+  resetStuckProcessing(timeoutMs: number, now = new Date().toISOString()): string[] {
+    const cutoff = new Date(new Date(now).getTime() - timeoutMs).toISOString();
+    return this.runWrite(() => {
+      // A PROCESSING record whose processing_started_at is older than the cutoff (or, defensively,
+      // null) is assumed abandoned by a dead worker and re-queued (Req 7.1).
+      const rows = this.db
+        .prepare(
+          `SELECT id FROM upload_records
+            WHERE status = @processing
+              AND (processing_started_at IS NULL OR processing_started_at <= @cutoff)`,
+        )
+        .all({ processing: ProcessingStatus.PROCESSING, cutoff }) as { id: string }[];
+
+      if (rows.length === 0) {
+        return [];
+      }
+
+      const reset = this.db.prepare(
+        `UPDATE upload_records
+            SET status = @pending, processing_started_at = NULL
+          WHERE id = @id AND status = @processing`,
+      );
+      const ids: string[] = [];
+      for (const row of rows) {
+        const info = reset.run({
+          id: row.id,
+          pending: ProcessingStatus.PENDING,
+          processing: ProcessingStatus.PROCESSING,
+        });
+        if (info.changes > 0) {
+          ids.push(row.id);
+        }
+      }
+      return ids;
+    });
+  }
+
+  retryProcessing(id: string): UploadRecord {
+    return this.runWrite(() => {
+      const existing = this.requireUpload(id);
+      if (existing.status !== ProcessingStatus.FAILED) {
+        throw new Error(
+          `Cannot retry Upload_Record ${id}: status is ${existing.status}, expected FAILED`,
+        );
+      }
+      this.db
+        .prepare(
+          `UPDATE upload_records
+              SET status = @pending, error = NULL, processing_started_at = NULL
+            WHERE id = @id`,
+        )
+        .run({ id, pending: ProcessingStatus.PENDING });
+      return this.requireUpload(id);
     });
   }
 

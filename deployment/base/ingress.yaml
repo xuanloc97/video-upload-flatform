@@ -1,0 +1,52 @@
+# NGINX Ingress: single entry point with path-based routing (design "Access endpoint", Req 10.4).
+#
+#   /graphql, /health, /files  -> backend Service (API, health, file serving)
+#   /                          -> frontend Service (React SPA)
+#
+# Requires an NGINX ingress controller in the cluster (kind: `kind create cluster` with the
+# ingress-ready config, then apply the ingress-nginx manifest). If the controller is unavailable,
+# use the documented port-forward fallback (see scripts/deploy.sh output and README).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: video-platform
+  labels:
+    app.kubernetes.io/name: video-platform
+  annotations:
+    # Allow large multipart uploads (4K MP4s) through the ingress.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /graphql
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
+          - path: /files
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

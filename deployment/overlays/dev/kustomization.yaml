@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Dev overlay: single replica per tier for a minimal local footprint. Suitable for quickly bringing
+# the whole stack up on kind to demo the end-to-end flow.
+namespace: video-platform
+
+resources:
+  - ../../base
+
+# Pin the locally-built images (loaded into kind by scripts/build.sh). newTag keeps the manifests
+# free of hardcoded tags so the same base works for dev and ha.
+images:
+  - name: video-platform/backend
+    newTag: dev
+  - name: video-platform/processing
+    newTag: dev
+  - name: video-platform/frontend
+    newTag: dev
+
+# Base already defaults to single replicas, so no replica patches are needed here.
