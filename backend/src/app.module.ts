@@ -1,3 +1,4 @@
+import { tmpdir } from 'os';
 import { join } from 'path';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { DynamicModule, Module } from '@nestjs/common';
@@ -45,7 +46,10 @@ export class AppModule {
       imports: [
         GraphQLModule.forRoot<ApolloDriverConfig>({
           driver: ApolloDriver,
-          autoSchemaFile: join(process.cwd(), 'schema.gql'),
+          // Code-first generates the SDL to a file on boot. Write it to a per-pod writable temp
+          // dir so the container can run with readOnlyRootFilesystem: true (Req 10.5). An
+          // emptyDir mounted at /tmp backs this in the Kubernetes manifest.
+          autoSchemaFile: join(tmpdir(), 'video-platform-schema.gql'),
           sortSchema: true,
         }),
         TerminusModule,

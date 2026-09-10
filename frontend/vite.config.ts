@@ -24,8 +24,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
-    // The repo lives on a slow /mnt/d Windows mount under WSL; give async findBy* queries (which
-    // await Apollo query resolution) generous headroom so tests are not flaky under load.
+    // Give async findBy* queries (which await Apollo query resolution) generous headroom so tests
+    // are not flaky under load or on slower filesystems.
     testTimeout: 30000,
   },
 });

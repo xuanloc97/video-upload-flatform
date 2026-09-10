@@ -50,3 +50,21 @@ export class StubInvalidProbe implements Mp4Probe {
     return { valid: false, reason: this.reason };
   }
 }
+
+/**
+ * Build a fully-wired {@link UploadResolver} over the given Storage + MetadataStore, using a probe
+ * stub that accepts everything. Lets the query resolvers (`videos`/`videoStatus`/`videoMetadata`)
+ * be exercised directly — no HTTP/GraphQL server needed — against temp-dir/temp-SQLite backends.
+ */
+export function makeResolver(
+  storage: import('@video-platform/shared').Storage,
+  metadata: import('@video-platform/shared').MetadataStore,
+): import('./upload.resolver').UploadResolver {
+  // Lazy require to avoid a load-time cycle (resolver -> service -> helpers in some orderings).
+
+  const { UploadService } = require('./upload.service') as typeof import('./upload.service');
+
+  const { UploadResolver } = require('./upload.resolver') as typeof import('./upload.resolver');
+  const service = new UploadService(storage, metadata, new StubValidProbe());
+  return new UploadResolver(service, metadata);
+}

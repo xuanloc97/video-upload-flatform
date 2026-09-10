@@ -85,40 +85,40 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Upload a real MP4 and a 4K MP4 (both accepted); upload a renamed `.txt`, a truncated MP4, and a non-MP4 with a spoofed extension (all rejected with descriptive errors and no record/file created); record the result in `docs/ai-usage-log.md`
     - _Requirements: 2.4, 2.5_
 
-- [ ] 5. Implement backend listing, status, metadata, and file-serving APIs
-  - [ ] 5.1 Implement `videos` and `videoStatus` queries
+- [x] 5. Implement backend listing, status, metadata, and file-serving APIs
+  - [x] 5.1 Implement `videos` and `videoStatus` queries
     - Return every Upload_Record with id, original filename, upload timestamp, and status; return current status for a valid id and a descriptive error for an unknown id
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5_
 
-  - [ ] 5.2 Implement `videoMetadata` query and the file-serving route
+  - [x] 5.2 Implement `videoMetadata` query and the file-serving route
     - Return thumbnail + rendition references only when `COMPLETED` (otherwise current status with no refs); add a REST-style `/files/...` route that streams renditions/thumbnails from `/uploads` with correct content types and HTTP range support for playback
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-  - [ ]* 5.3 Write property test for listing completeness
+  - [x]* 5.3 Write property test for listing completeness
     - **Property 5: Listing returns every record with all required fields**
     - **Validates: Requirements 3.1, 3.2**
 
-  - [ ]* 5.4 Write property test for status consistency
+  - [x]* 5.4 Write property test for status consistency
     - **Property 6: Status query is consistent with stored state**
     - **Validates: Requirements 3.3, 3.5**
 
-  - [ ]* 5.5 Write property test for status of a missing id
+  - [x]* 5.5 Write property test for status of a missing id
     - **Property 7: Status query for a missing id errors**
     - **Validates: Requirements 3.4**
 
-  - [ ]* 5.6 Write property test for COMPLETED metadata completeness
+  - [x]* 5.6 Write property test for COMPLETED metadata completeness
     - **Property 8: Metadata for COMPLETED records is complete**
     - **Validates: Requirements 4.1, 4.2**
 
-  - [ ]* 5.7 Write property test for retrievable referenced files
+  - [x]* 5.7 Write property test for retrievable referenced files
     - **Property 9: Referenced files are retrievable**
     - **Validates: Requirements 4.3, 4.4**
 
-  - [ ]* 5.8 Write property test for withholding metadata until COMPLETED
+  - [x]* 5.8 Write property test for withholding metadata until COMPLETED
     - **Property 10: Metadata is withheld until COMPLETED**
     - **Validates: Requirements 4.5**
 
-  - [ ]* 5.9 Write unit tests for query/resolver shape and file-route range requests
+  - [x]* 5.9 Write unit tests for query/resolver shape and file-route range requests
     - Confirm the existence/shape of `uploadVideo`, `videos`, `videoStatus`, `videoMetadata`; test range requests for playback
     - _Requirements: 2.1, 3.1_
 
@@ -255,12 +255,12 @@ Language for all components: TypeScript (backend NestJS, processing Node worker,
     - Review `kubectl kustomize overlays/ha` for resource limits, securityContext, image refs, and no hardcoded secrets; read each script line by line for destructive/wrong-context commands and confirm deletes are namespace-scoped and kube-context is checked; record both reviews in `docs/ai-usage-log.md`
     - _Requirements: 10.6, 10.x, 15.3_
 
-- [ ] 14. Deploy to kind and verify runtime health, storage safety, and probes
-  - [ ] 14.1 Deploy the stack and verify SQLite single-writer safety (HVC #3)
+- [x] 14. Deploy to kind and verify runtime health, storage safety, and probes
+  - [x] 14.1 Deploy the stack and verify SQLite single-writer safety (HVC #3)
     - Deploy with ≥2 backend replicas; drive concurrent uploads/status updates, then run `PRAGMA integrity_check;` on `metadata.db` and confirm `ok` with no lost records; record in `docs/ai-usage-log.md`
     - _Requirements: 2.2, 3.2_
 
-  - [ ] 14.2 Verify health/readiness probe correctness (HVC #6)
+  - [x] 14.2 Verify health/readiness probe correctness (HVC #6)
     - Simulate `/uploads` loss and confirm `/health/ready` reports unhealthy and the pod leaves rotation; confirm probe response well under 5s; record in `docs/ai-usage-log.md`
     - _Requirements: 5.2, 5.3_
 

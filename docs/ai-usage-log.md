@@ -10,7 +10,7 @@
 
 | Tool / model | Where used |
 | --- | --- |
-| Kiro (agentic AI coding assistant, in-IDE) | All code generation, GraphQL schema, Kubernetes/Kustomize manifests, Dockerfiles, shell scripts, test scaffolding (Jest/Vitest + fast-check), and this documentation. Also drove the local verification runs (WSL/Node/FFmpeg/kind) and recorded the HVC results. |
+| Kiro (agentic AI coding assistant, in-IDE) | All code generation, GraphQL schema, Kubernetes/Kustomize manifests, Dockerfiles, shell scripts, test scaffolding (Jest/Vitest + fast-check), and this documentation. Also drove the local verification runs (Node/FFmpeg/kind) and recorded the HVC results. |
 
 The work was performed interactively: the human directed each task, reviewed and accepted/rejected
 AI output, and signed off the Human Verification Checkpoints; the AI wrote the code/config/docs and
@@ -43,9 +43,9 @@ What AI was used for, per component. Filled in as each component is built.
 - **High availability (replicas, probes, rolling updates, failover):** AI authored the `ha` overlay
   (backend/frontend ≥2 replicas, `RollingUpdate` with `maxUnavailable: 0` for the backend,
   single-replica worker) and the liveness/readiness probes wired to `/health/live` and
-  `/health/ready`. The live failover verification (Tasks 14/15, HVC #3/#6/#7) is **blocked on this
-  machine** by the WSL2 memory limit — see section 7; the manifests render cleanly and are ready to
-  verify on a host with adequate RAM.
+  `/health/ready`. The live HA deploy plus HVC #3 (single-writer integrity under concurrent load)
+  and HVC #6 (readiness under storage loss) were verified on kind — see section 6; the rolling-update
+  / failover checks (Task 15, HVC #7) remain to be run against the same cluster.
 - **Documentation (README, architecture, failover-test, production-notes):** AI wrote `README.md`,
   `docs/architecture.md`, `docs/production-notes.md`, and this `ai-usage-log.md`, all grounded in the
   code/config actually produced (including honest notes on what was and was not verified live).
@@ -95,10 +95,8 @@ The artifacts produced (code, YAML, scripts, prose). Add entries as work is done
   `nginx.conf`, `.dockerignore` files; Kustomize base `backend.yaml`/`processing.yaml`/
   `frontend.yaml`/`ingress.yaml` (+ updated base kustomization); `overlays/dev` and `overlays/ha`;
   `scripts/build.sh`, `scripts/deploy.sh`, `scripts/cleanup.sh`.
-- **Task 14 (partial):** `deployment/kind-cluster.yaml`, `deployment/wslconfig.sample`, and the WSL
-  helper scripts for the cluster flow (`wsl-install-kind.sh`, `wsl-kind-up.sh`,
-  `wsl-install-ingress.sh`, `wsl-build-images.sh`, `wsl-deploy-ha.sh`, etc.). The cluster was
-  created and the stack applied, but HVC #3/#6 could not be completed — see section 7.
+- **Task 14:** `deployment/kind-cluster.yaml` and the live HA deploy on kind (backend ×2, frontend
+  ×2, processing ×1) with HVC #3 and HVC #6 both verified — see sections 6 and 7.
 - **Task 17:** `README.md`, `docs/architecture.md`, `docs/production-notes.md`, and the finalization
   of this `ai-usage-log.md`.
 
@@ -158,8 +156,16 @@ result lands here.
   Every rejected case created NO Upload_Record and left NO file under `originals/`; the store ended
   with exactly the 2 accepted records. Verified via a throwaway script (since removed) on
   2026-09-07. Confirms Req 2.4 and 2.5. Human sign-off recorded.
+- **Task 5 — Listing/status/metadata queries + file-serving route.** Verified `tsc --build` (exit 0)
+  and the full backend Jest suite pass under Node 20: 8 suites / 40 tests, no regressions. Task 5
+  coverage includes Properties 5, 6, 7, 8, 10 (listing/status/metadata via temp-dir Storage +
+  temp-SQLite store) and Property 9 (referenced files retrievable, full + ranged) plus resolver-shape
+  and file-route unit tests (full 200, ranged 206 with correct `Content-Range`, suffix/open-ended
+  ranges, 416 unsatisfiable, 404 missing, and `../` path-traversal refused). The `/files/*` route
+  streams with per-extension Content-Type, `Accept-Ranges: bytes`, and HTTP Range support for
+  playback; `videoMetadata` returns rendition/thumbnail URLs only when COMPLETED (Req 4.5).
 - **Tasks 5–12 — backend/processing/frontend suites.** After each task the relevant build and test
-  suites were run in WSL. Final full-stack checkpoint (Task 12): `tsc --build` clean for the Node
+  suites were run locally. Final full-stack checkpoint (Task 12): `tsc --build` clean for the Node
   workspaces and `tsc --noEmit` + `vite build` clean for the frontend; tests green — shared 29/29,
   backend 18/18, processing 14/14 (incl. a real-FFmpeg integration pass and the Sample_Video
   end-to-end demo reaching COMPLETED with 720p+480p renditions + thumbnail), frontend 6/6.
@@ -181,6 +187,52 @@ result lands here.
     `kubectl delete namespace video-platform`, both `--ignore-not-found`) — no cluster-wide deletes,
     no `kind delete cluster`, no `--all`. Human sign-off recorded. Note: a live `kind` deploy is
     exercised in Task 14 (HVC #3/#6).
+- **Task 14 — live HA deploy on kind (Docker Desktop). DONE.** The HA stack was deployed on kind
+  with Docker Desktop (~3.8 GB engine memory, enough for the single-node kind control plane + the
+  HA stack). `scripts/build.sh`
+  images loaded into the `kind-video-platform` cluster and `CONFIRM=yes scripts/deploy.sh ha`
+  applied the HA overlay. Bringing the stack up surfaced three real backend-image defects that only
+  manifest at container runtime (all fixed — see section 7): a missing nested `@nestjs/terminus`,
+  the code-first schema write under a read-only root FS, and a missing `ffprobe`. After the fixes
+  the stack ran clean: backend ×2, frontend ×2, processing ×1 all `Running`/`Ready`;
+  `/health/live` → 200 (~18 ms) and `/health/ready` → 200 (~17 ms, `uploads` writable check `up`).
+- **Task 14 — HVC #3 (SQLite single-writer safety under concurrent load). PASSED.** With 2 backend
+  replicas behind `svc/backend` (per-connection load-balanced), drove 51 concurrent `uploadVideo`
+  mutations (1 warm-up + a burst of 50 parallel multipart uploads of the committed Sample_Video) —
+  all 51 returned an id, 0 errors — while the single processing worker concurrently `claimNext`ed
+  and posted `updateProcessingResult` writes (all writes funnel through the backend, the sole writer
+  of `metadata.db` on the shared RWX volume). Verification, opening `metadata.db` read-only with a
+  second connection:
+  * mid-load: `PRAGMA integrity_check` → `ok`, `PRAGMA foreign_key_check` → empty, `upload_records`
+    total = distinct = 51.
+  * at rest (after the worker drained the queue): `integrity_check` → `ok`, `foreign_key_check` →
+    empty, `upload_records` total = distinct = 51, all 51 `COMPLETED`, 102 `renditions` rows across
+    51 distinct uploads, `PRAGMA journal_mode` → `delete` (rollback journal, **not** WAL — the
+    deliberate NFS-safety choice). No lost, duplicated, or corrupted records under concurrency.
+    Confirms Req 2.2 and 3.2. Human sign-off recorded.
+- **Task 14 — HVC #6 (readiness under storage loss). PASSED.** Simulated `/uploads` loss by scaling
+  `deploy/nfs-provisioner` to 0 (the in-cluster NFS server). Observed:
+  * The backend readiness endpoint returned **`503`** — the designed unhealthy response from the
+    Terminus `uploads` indicator's bounded writable check — within kubelet's `timeoutSeconds: 3`
+    (well under the 5 s budget, Req 5.3). As the stale mount fully hung, subsequent probes escalated
+    to kubelet `context deadline exceeded` (still capped at 3 s), which also counts as a failure.
+  * Both backend pods went **`0/1` NotReady** and `kubectl get endpoints backend` emptied — the pods
+    were pulled from Service rotation (Req 5.2).
+  * `/health/live` (no storage dependency) stayed 200 initially; under sustained NFS I/O stress it
+    eventually also timed out, because a hung, uncancellable `fs` write on a stale NFS mount occupies
+    a libuv threadpool slot (the app-level 2 s `Promise.race` timeout returns 503 but cannot reclaim
+    the stuck native syscall). Noted as a real-world nuance of NFS hangs, not a readiness-logic
+    defect; the readiness contract (unhealthy → out of rotation, fast) held.
+  * Recovery + emptyDir durability confirmation: restarting the provisioner did **not** by itself
+    restore service — the ganesha server is backed by `emptyDir`, so its restart wiped the export
+    tree and lost the per-PV export registration (pods failed to mount with `reason given by server:
+    No such file or directory`). This is exactly the documented ephemeral-storage limitation. Full
+    recovery: scaled backend/processing to 0 to release the claim, deleted the stale `uploads-pvc`
+    + PV, re-applied the `ha` overlay (the provisioner dynamically created a fresh PV, `Bound` RWX),
+    and the rollouts completed — backend ×2 `Ready`, both back in `endpoints`, `/health/ready` → 200
+    (~6 ms). Confirms Req 5.2 and 5.3. Human sign-off recorded. **CAUTION preserved:** all work
+    stayed on the `kind-video-platform` context; the deploy script printed and confirmed the target
+    context before applying.
 
 ## 7. AI mistakes / hallucinations / unsafe suggestions discovered
 
@@ -212,34 +264,40 @@ assumptions discovered, and how they were caught and corrected (Req 14.3).
   `insufficient available space`. Reduced the request to `5Gi` for the local demo.
 - **Task 4 — ffmpeg/ffprobe not installed in the dev environment (RESOLVED).** `which ffmpeg
   ffprobe` initially returned nothing, so the MP4-validation property tests used an injectable stub
-  probe and the real-ffprobe 4K test self-skipped. Originally resolved on macOS via Homebrew; after
-  the environment moved to Windows the toolchain was reinstalled inside WSL (static FFmpeg 7.0.2 into
-  `~/.local/bin`, no sudo). After install the real-ffprobe 4K test runs for real and HVC #1 was
-  performed. FFmpeg is also baked into the processing container image (Task 13.1).
-- **Task 14 — kind cluster unstable due to WSL2 memory limit (BLOCKED, root cause identified).**
-  Attempted the live deploy on kind. Built + loaded all three images and applied the manifests
-  successfully (namespace, services, deployments, PVC, ingress all created; frontend rolled out).
-  However the WSL2 VM repeatedly became unresponsive / self-restarted under load, dropping the kind
-  API server each time. Root cause: `/proc/meminfo` shows the WSL2 VM has only **~1.9 GB total RAM**
-  (`MemTotal ≈ 1904248 kB`) and there is no `~/.wslconfig`. A kind control-plane plus the HA stack
-  (backend×2 + processing/FFmpeg + nfs-provisioner + ingress) far exceeds that, so the VM OOMs.
-  This is an environment capacity limit, not a manifest/app defect — `kubectl kustomize` renders
-  cleanly and all app tests pass. Fix for the reviewer: create `C:\Users\<you>\.wslconfig` with
-  e.g. `[wsl2]\nmemory=8GB\nprocessors=4`, run `wsl --shutdown`, then re-run
-  `scripts/wsl-kind-up.sh` → `scripts/wsl-install-ingress.sh` → `scripts/build.sh video-platform`
-  → `CONFIRM=yes scripts/deploy.sh ha`. HVC #3/#6 (Task 14) and HVC #7 (Task 15) are deferred until
-  the cluster has adequate memory. **CAUTION observed:** the machine's default kube-context is a
-  production AWS EKS cluster; all cluster work was confined to the `kind-video-platform` context and
-  the deploy/cleanup scripts print + confirm the context before acting.
-- **Environment migration — macOS → Windows/WSL.** The project moved machines mid-build. Windows has
-  no Node/npm on PATH, so the Node toolchain (Node 20 via nvm), FFmpeg (static build), and all
-  build/test runs were set up inside WSL Ubuntu against the repo on `/mnt/d`. A WSL interop quirk was
-  found and worked around: `$HOME` can leak in as a Windows path (`C:UsersAdmin`) under
-  PowerShell→WSL, which sent `nvm` installs to a bad path; every helper script now forces
-  `export HOME=/home/$(whoami)`. Because `/mnt/d` I/O is slow, per-test timeouts were raised for
-  Jest (`--testTimeout`) and Vitest (`testTimeout` in config); two tests that flaked purely on that
-  slowness (a health-indicator writable probe and a frontend detail query) were made resilient
-  without weakening production behavior.
+  probe and the real-ffprobe 4K test self-skipped. Resolved by installing FFmpeg locally; after
+  install the real-ffprobe 4K test runs for real and HVC #1 was performed. FFmpeg is also baked into
+  the processing container image (Task 13.1) and, after Task 14, the backend image too.
+- **Task 14 — cluster resource headroom.** A `kind` control plane plus the HA stack (backend ×2 +
+  processing/FFmpeg + nfs-provisioner + ingress) needs a few GB of engine memory; it ran stably on
+  Docker Desktop with ~3.8 GB. **CAUTION observed throughout:** all cluster work was confined to the
+  local `kind-video-platform` context and the deploy/cleanup scripts print + confirm the target
+  context before acting.
+- **Task 14 — three backend-image defects that only surfaced at container runtime (caught by the
+  live deploy, all fixed).** The unit/property tests and `kubectl kustomize` all passed, but the
+  first `deploy.sh ha` exposed three issues that only appear when the compiled app runs inside the
+  hardened container. Each was a genuine packaging/runtime gap, not a test artifact:
+  1. **Missing `@nestjs/terminus` in the runtime image → `Cannot find module` crash-loop.** npm
+     workspaces hoisted most deps to the root `node_modules`, but `@nestjs/terminus` was nested at
+     `backend/node_modules/@nestjs/terminus` (npm placed it there to satisfy its dependency tree).
+     The Dockerfile runtime stage only copied `/app/node_modules`, so the nested package was
+     dropped. Fixed by also copying the workspace's own `node_modules`
+     (`COPY --from=builder /app/backend/node_modules ./backend/node_modules`).
+  2. **Code-first GraphQL schema write failed under `readOnlyRootFilesystem: true` → `EROFS:
+     read-only file system, open '/app/schema.gql'`.** `GraphQLModule` was configured with
+     `autoSchemaFile: join(process.cwd(), 'schema.gql')`, which writes into the (read-only) working
+     dir on boot. Fixed by writing to a per-pod writable temp path
+     (`join(os.tmpdir(), 'video-platform-schema.gql')`) and mounting an `emptyDir` at `/tmp` in the
+     backend Deployment — preserving the read-only-root security posture (Req 10.5).
+  3. **Missing `ffprobe` in the backend image → every upload rejected with `spawn ffprobe
+     ENOENT`.** The upload path validates MP4s with magic-bytes + `ffprobe`, but only the processing
+     image installed the FFmpeg toolchain. Fixed by adding `apt-get install -y --no-install-recommends
+     ffmpeg` (which ships `ffprobe`) to the backend runtime stage, mirroring the processing image.
+  These are exactly the kind of gaps HVC #3 is meant to catch by exercising the real deployed
+  artifacts rather than only the source tree.
+- **Test resilience on slow filesystems.** On slower disks the default 5 s per-test timeout was too
+  tight, so per-test timeouts were raised for Jest (`--testTimeout`) and Vitest (`testTimeout` in
+  config); two tests that flaked purely on that slowness (a health-indicator writable probe and a
+  frontend detail query) were made resilient without weakening production behavior.
 - **Task 3 — intermittent storage property-test failure (not reproduced).** While running the shared
   suite during Task 3, one run reported `storage.property.test.ts` "Property 1: Storage round-trip"
   failing on a fast-check-generated path where the same name was used as both a file and a directory
@@ -255,14 +313,16 @@ Read end to end on completion of Task 17 and confirmed it matches reality:
 - **What is verified live and passing:** the full local test suite — shared 29/29, backend 18/18,
   processing 14/14 (including a real-FFmpeg integration pass and the Sample_Video end-to-end demo),
   frontend 6/6 — plus HVC #1 (MP4 validation), HVC #4 (concurrent RWX mount + durability on kind),
-  and HVC #8/#9 (manifest + script review). Builds are clean across all packages and the frontend.
-- **What is NOT yet verified live (stated plainly):** HVC #3 (SQLite single-writer integrity under
-  concurrent load), HVC #6 (readiness probe under storage loss), and HVC #7 (rolling update / no
-  request loss / rollback), i.e. Tasks 14 (partial) and 15. These are blocked by the WSL2 memory
-  limit on the current machine (section 7), not by any code or manifest defect. The manifests render
-  cleanly, the images build and load into kind, and the stack applies; the cluster simply cannot stay
-  up under load with ~1.9 GB of WSL RAM. They are ready to run on a host with adequate memory using
-  the documented steps.
+  HVC #8/#9 (manifest + script review), and — now completed on macOS/Docker Desktop — the live HA
+  deploy on kind with **HVC #3** (SQLite single-writer integrity under 51 concurrent uploads:
+  `integrity_check ok`, 51/51 distinct records, all COMPLETED) and **HVC #6** (readiness reports
+  unhealthy and the pods leave Service rotation when `/uploads` is lost, within the <5 s budget).
+  Builds are clean across all packages and the frontend. The live deploy also caught and fixed three
+  real backend container-image defects (section 7).
+- **What is NOT yet verified live (stated plainly):** HVC #7 (rolling update with no request loss /
+  rollback) and the rest of Task 15 (multi-replica failover + file durability, `docs/failover-test.md`),
+  plus Task 18 (clean-environment README reproducibility, HVC #11). These remain to be run against
+  the now-healthy `kind-video-platform` cluster; nothing currently blocks them.
 - **Safety note:** the machine's default kube-context is a production AWS EKS cluster. All Kubernetes
   work was confined to the local `kind-video-platform` context, and the `deploy.sh`/`cleanup.sh`
   scripts print and confirm the target context before acting (and are namespace-scoped).

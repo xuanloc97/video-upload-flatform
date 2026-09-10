@@ -40,6 +40,10 @@ spec:
           volumeMounts:
             - name: uploads
               mountPath: /uploads
+            # Per-pod writable scratch dir. Required because the root FS is read-only; the
+            # code-first GraphQL driver writes its generated schema here on boot.
+            - name: tmp
+              mountPath: /tmp
           livenessProbe:
             httpGet:
               path: /health/live
@@ -72,6 +76,8 @@ spec:
         - name: uploads
           persistentVolumeClaim:
             claimName: uploads-pvc
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

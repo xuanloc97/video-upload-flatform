@@ -38,8 +38,19 @@ FROM node:20-bookworm-slim AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
+# ffprobe (shipped in the ffmpeg package) is required by the upload path's MP4 validation
+# (magic-bytes + ffprobe container/stream check). Only the CLI is needed here; the heavier
+# transcoding work happens in the processing image.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ffmpeg \
+  && rm -rf /var/lib/apt/lists/*
+
 # Copy the pruned node_modules (incl. compiled better-sqlite3) and built JS.
+# npm workspaces hoist most deps to the root node_modules, but some (e.g. @nestjs/terminus,
+# nested to avoid a version conflict) land in the workspace's own node_modules — copy that too so
+# Node's module resolution from backend/dist/main.js finds them.
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/backend/node_modules ./backend/node_modules
 COPY --from=builder /app/shared/dist ./shared/dist
 COPY --from=builder /app/shared/package.json ./shared/package.json
 COPY --from=builder /app/backend/dist ./backend/dist

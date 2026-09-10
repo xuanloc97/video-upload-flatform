@@ -27,7 +27,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the design and trade-offs
 /processing    # FFmpeg worker               — npm workspace
 /shared        # Shared types + Storage/MetadataStore abstractions — npm workspace
 /deployment    # Kustomize base + overlays (dev, ha), NFS, ingress, kind config
-/scripts       # build.sh, deploy.sh, cleanup.sh (+ WSL helper scripts)
+/scripts       # cluster-up.sh, build.sh, deploy.sh, test.sh, cleanup.sh, generate-sample.sh
 /docs          # architecture.md, production-notes.md, failover-test.md, ai-usage-log.md
 /samples       # sample-video.mp4 (the Sample_Video)
 ```
@@ -41,12 +41,19 @@ See [`docs/architecture.md`](docs/architecture.md) for the design and trade-offs
   processing container image bundles its own FFmpeg
 
 > **Memory:** a `kind` control-plane plus this stack needs a host with enough RAM (≈8 GB+ free is
-> comfortable; ~5 GB works for the single-replica `dev` overlay). On Windows/WSL2 you must raise the
-> WSL2 memory limit — see [Windows / WSL2](#windows--wsl2-notes) and
-> [`deployment/wslconfig.sample`](deployment/wslconfig.sample). A ~4 GB host is not enough to run the
-> cluster.
+> comfortable; ~5 GB works for the single-replica `dev` overlay). A ~4 GB host is enough for the
+> `dev` overlay but tight for the full `ha` stack.
 
 ## Build and test the code (no cluster)
+
+The quickest path is the helper, which installs, builds, and tests every package (shared, backend,
+processing, and the frontend). It requires Node >= 18 (Node 20 recommended):
+
+```bash
+bash scripts/test.sh
+```
+
+Or run the steps by hand:
 
 ```bash
 npm install                     # installs the shared/backend/processing workspaces
@@ -61,22 +68,25 @@ cd frontend && npm install && npm run build && npm test
 
 All commands assume Docker is running and your shell can reach `kind`/`kubectl`.
 
-### 1. Create the cluster (with ingress-ready port mappings)
+### 1. Create the cluster and install the ingress controller
+
+```bash
+bash scripts/cluster-up.sh
+```
+
+This creates the `video-platform` kind cluster (with ingress-ready port mappings from
+`deployment/kind-cluster.yaml`), installs the NGINX ingress controller, and waits for it to be
+ready. It is idempotent — if the cluster already exists it is reused. To do it by hand instead:
 
 ```bash
 kind create cluster --config deployment/kind-cluster.yaml
-```
-
-### 2. Install the NGINX ingress controller
-
-```bash
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 kubectl wait --namespace ingress-nginx \
   --for=condition=Ready pod \
   --selector=app.kubernetes.io/component=controller --timeout=180s
 ```
 
-### 3. Build the images and load them into kind
+### 2. Build the images and load them into kind
 
 ```bash
 bash scripts/build.sh video-platform
@@ -85,7 +95,7 @@ bash scripts/build.sh video-platform
 This builds `video-platform/{backend,processing,frontend}:dev` and `kind load`s them into the
 cluster named `video-platform`.
 
-### 4. Deploy
+### 3. Deploy
 
 ```bash
 # dev = single replica per tier (lighter); ha = backend/frontend x2 + zero-downtime backend rollout
@@ -96,7 +106,7 @@ bash scripts/deploy.sh dev      # or: bash scripts/deploy.sh ha
 `CONFIRM=yes` to skip the prompt in automation). It waits for the rollouts and prints how to reach
 the app.
 
-### 5. Access the frontend (Access_Endpoint)
+### 4. Access the frontend (Access_Endpoint)
 
 With the ingress controller installed and the kind port mappings, browse to:
 
@@ -153,25 +163,14 @@ bash scripts/cleanup.sh dev     # or: ha — matches the overlay you deployed
 ```
 
 This deletes the overlay's resources and the `video-platform` namespace (namespace-scoped; it does
-not touch the rest of your cluster). To remove the whole local cluster:
+not touch the rest of your cluster). It force-deletes any pods whose shared-NFS mount is hung so
+namespace termination can't stall, and clears the retained PersistentVolume so the next
+`deploy.sh` provisions a fresh, clean volume.
+
+To also tear down the whole local kind cluster in one go:
 
 ```bash
+DELETE_CLUSTER=yes bash scripts/cleanup.sh ha
+# equivalent manual step:
 kind delete cluster --name video-platform
 ```
-
-## Windows / WSL2 notes
-
-This project was built and tested on **WSL2 (Ubuntu)** on Windows. Node/npm, FFmpeg, kind, and
-kubectl all run inside WSL against the repo on `/mnt/...`. A few conveniences and gotchas:
-
-- **Helper scripts** in `scripts/` (prefixed `wsl-`) wrap the common flows with the correct
-  environment (Node via `nvm`, kind on `PATH`) so you don't fight shell quoting: e.g.
-  `wsl-run.sh` (build/test), `wsl-test-all.sh`, `wsl-frontend.sh`, `wsl-kind-up.sh`,
-  `wsl-install-ingress.sh`, `wsl-build-images.sh`, `wsl-deploy-ha.sh`, `wsl-install-ffmpeg.sh`,
-  `wsl-install-kind.sh`.
-- **`$HOME` leak:** under PowerShell→WSL interop `$HOME` can arrive as a Windows path
-  (`C:UsersAdmin`); the helper scripts force `export HOME=/home/$(whoami)` before using `nvm`.
-- **Slow `/mnt/d` I/O:** tests use raised timeouts because the Windows-mounted filesystem is slow.
-- **WSL2 memory:** raise it via `C:\Users\<you>\.wslconfig` before running kind — see
-  [`deployment/wslconfig.sample`](deployment/wslconfig.sample). On a ~4 GB host the kind cluster
-  will OOM; use a larger host (or a non-Windows machine) for the Kubernetes steps.
