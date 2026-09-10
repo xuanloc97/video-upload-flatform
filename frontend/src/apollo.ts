@@ -15,7 +15,14 @@ export const GRAPHQL_ENDPOINT = '/graphql';
  */
 export function createApolloClient() {
   return new ApolloClient({
-    link: createUploadLink({ uri: GRAPHQL_ENDPOINT }),
+    link: createUploadLink({
+      uri: GRAPHQL_ENDPOINT,
+      // Apollo Server enables CSRF prevention by default, which blocks multipart (`multipart/
+      // form-data`) upload requests unless a "preflight" header is present. apollo-upload-client
+      // does not add it automatically, so we send it explicitly; otherwise uploads fail with
+      // HTTP 400 "blocked as a potential Cross-Site Request Forgery".
+      headers: { 'Apollo-Require-Preflight': 'true' },
+    }),
     cache: new InMemoryCache(),
   });
 }

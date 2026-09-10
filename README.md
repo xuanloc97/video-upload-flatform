@@ -161,6 +161,122 @@ rolling-update procedures (terminate a backend/frontend replica and confirm the 
 delete/recreate a backend pod and confirm previously uploaded files survive; run a rollout with a
 request loop and confirm zero failed requests, then `kubectl rollout undo`).
 
+## Troubleshooting
+
+### Upload fails with `Received status code 405`
+
+**Cause:** you are reaching the SPA _without_ going through the ingress (typically the
+`kubectl port-forward svc/frontend 8080:80` fallback). The SPA issues a same-origin `POST /graphql`,
+which then hits the frontend's static NGINX instead of the backend. NGINX only allows `GET`/`HEAD`
+on static files, so the `POST` is rejected with **405 Method Not Allowed**.
+
+**Fix:** open the app through the ingress at **`http://localhost/`**. The ingress routes `/graphql`,
+`/health`, and `/files` to the backend, so uploads work. (If you must use the port-forward fallback,
+port-forward the backend too and note that the SPA still calls same-origin `/graphql` — the ingress
+path is the supported one.)
+
+### Upload fails with `Received status code 400` (CSRF)
+
+**Cause:** Apollo Server enables CSRF prevention by default, which blocks `multipart/form-data`
+upload requests unless a preflight header is present. `apollo-upload-client` does not add that header
+automatically, so the request is rejected with:
+
+```
+This operation has been blocked as a potential Cross-Site Request Forgery (CSRF)...
+```
+
+The backend logs show no resolver error because the request is blocked before it reaches the
+resolver.
+
+**Fix:** the Apollo upload link sends `Apollo-Require-Preflight: true` (see
+`frontend/src/apollo.ts`). If you change this, rebuild and redeploy the frontend, then hard-refresh
+the browser (Cmd+Shift+R) so the new JS bundle is loaded:
+
+```bash
+bash scripts/build.sh video-platform            # or: docker build -t video-platform/frontend:dev ./frontend && kind load docker-image video-platform/frontend:dev --name video-platform
+kubectl -n video-platform rollout restart deploy/frontend
+```
+
+### "I don't see an uploads folder in the project"
+
+Uploaded files are **not** stored in the repo/workspace. They live inside the cluster on the
+`ReadWriteMany` `uploads-pvc` (provisioned by the in-cluster NFS provisioner) and are mounted at
+`/uploads` in the backend and processing pods. Inspect them via a backend pod:
+
+```bash
+kubectl -n video-platform exec deploy/backend -- ls -la /uploads
+# subfolders: originals/  renditions/  thumbnails/  tmp/   plus metadata.db
+```
+
+### `GET /health` returns 404
+
+The backend does not expose a bare `/health` route. The actual health endpoints are
+`/health/live` and `/health/ready` (used by the Kubernetes liveness/readiness probes). Curl those
+paths directly instead of `/health`.
+
+### Rebuilding an image has no effect
+
+The deployments use the `:dev` tag with no explicit `imagePullPolicy`, so Kubernetes defaults to
+`IfNotPresent` and keeps running the old image already on the node. After you rebuild, you must load
+the image into kind **and** restart the deployment:
+
+```bash
+docker build -t video-platform/frontend:dev ./frontend
+kind load docker-image video-platform/frontend:dev --name video-platform
+kubectl -n video-platform rollout restart deploy/frontend   # same pattern for backend / processing
+```
+
+`bash scripts/build.sh video-platform` does the build + `kind load` step for all three images; you
+still need the `rollout restart` (or a fresh `deploy.sh`) for running pods to pick them up.
+
+### Frontend change not visible after redeploy
+
+The browser caches the hashed JS bundle. After a frontend rebuild/rollout, hard-refresh the page
+(**Cmd+Shift+R** / Ctrl+Shift+R) so the new `index.html` and asset bundle are fetched. The HTML
+entrypoint is served `no-cache`, so a hard refresh is enough.
+
+### `processing` logs `Worker loop error: fetch failed`
+
+At startup the worker polls `http://backend:3000/graphql` before the backend Service/pod is ready,
+so a few `fetch failed` lines right after deploy are normal and self-recover once the backend is up.
+If it keeps repeating, the backend is not reachable — check the backend pods are `Running`/`Ready`
+and that `BACKEND_GRAPHQL_URL` (in `deployment/base/processing.yaml`) points at the backend Service:
+
+```bash
+kubectl -n video-platform get pods
+kubectl -n video-platform logs deploy/backend --tail=30
+```
+
+### Only some renditions are produced
+
+Transcoding is **downscale-only**: a rendition is generated only when it is smaller than the source.
+The bundled `samples/sample-video.mp4` is 720p, so it produces just 720p and 480p — no 2K/1080p.
+Upload a 4K/2K source to see the higher renditions. This is expected, not a failure.
+
+### `http://localhost/` refuses to connect or 404s
+
+The ingress path needs the NGINX ingress controller and the kind port mappings. Run
+`bash scripts/cluster-up.sh` (installs the controller and creates the cluster with ingress-ready
+ports) and confirm it is ready:
+
+```bash
+kubectl get pods -n ingress-nginx
+```
+
+If you cannot use the ingress, fall back to the port-forward described in
+[Access the frontend](#4-access-the-frontend-access_endpoint) and browse to `http://localhost:8080/`
+(note the 405 caveat above — the ingress path is the supported one).
+
+### Pods stuck `Pending` or `OOMKilled` (especially on the `ha` overlay)
+
+The full `ha` stack (backend/frontend x2 + FFmpeg worker) needs a host with enough free RAM; FFmpeg
+transcoding of 4K sources is memory-heavy (the worker limit is 1Gi). On a small machine use the
+lighter `dev` overlay, and check events for the cause:
+
+```bash
+kubectl -n video-platform describe pod <pod>   # look for Insufficient memory / OOMKilled
+```
+
 ## Cleanup
 
 ```bash
